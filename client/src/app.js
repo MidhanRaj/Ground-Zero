@@ -183,18 +183,7 @@
   ctrl.minimumZoomDistance = 50;   // Don't zoom below 50 m
 
   // ── 6. Initial Camera Position ──────────────────────────────────────────────
-  const centerLon = (meta.west + meta.east) / 2.0;
-  const centerLat = (meta.south + meta.north) / 2.0;
-
-  viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.015, 3000),
-    orientation: {
-      heading: Cesium.Math.toRadians(0.0),
-      pitch:   Cesium.Math.toRadians(-45.0),
-      roll:    0.0
-    },
-    duration: 2.5
-  });
+  // Automatic flyTo on load removed so Cesium defaults to global view.
 
   // ── 7. Sea Surface Entity ────────────────────────────────────────────────────
   const oceanWest = meta.west;
@@ -220,6 +209,7 @@
 
     bridgeEntities.push(viewer.entities.add({
       name: bridge.name + ' Deck',
+      show: false,
       polygon: {
         hierarchy: new Cesium.PolygonHierarchy(
           Cesium.Cartesian3.fromDegreesArrayHeights(deckCoords)
@@ -239,6 +229,7 @@
       const hi = Math.max(pier.ground_height, pier.deck_height);
       bridgeEntities.push(viewer.entities.add({
         name: bridge.name + ' Pier',
+        show: false,
         polyline: {
           positions: Cesium.Cartesian3.fromDegreesArrayHeights([
             pier.lon, pier.lat, lo,
@@ -323,6 +314,14 @@
       ? 'Showing Observations Only' : 'Show Observations Only';
     provenanceLayer.alpha = obsOnlyActive ? 1.0 : 0.75;
   });
+
+  // Sync every layer/entity to what the UI actually shows checked on startup
+  const initialSourceRadio = document.querySelector('input[name="elevationSource"]:checked');
+  const initialSource = initialSourceRadio ? initialSourceRadio.value : 'carved';
+  updateElevationSource(initialSource === 'carved' ? 'carved' : 'uncarved');
+  if (provenanceLayer) provenanceLayer.show = chkProvenance.checked;
+  setStructuresVisible(chkStructures.checked && initialSource === 'carved');
+  seaEntity.show = chkSeaSurface.checked;
 
   // Vertical exaggeration
   const sliderExaggeration = document.getElementById('sliderExaggeration');
