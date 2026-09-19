@@ -160,24 +160,6 @@
     // Google tiles include their own terrain mesh — disable depth-test to avoid
     // z-fighting where the Globe terrain and the 3D tile mesh overlap.
     viewer.scene.globe.depthTestAgainstTerrain = false;
-
-    // Attach custom night shader: illuminates city buildings at night
-    try {
-      if (Cesium.CustomShader) {
-        buildingsTileset.customShader = new Cesium.CustomShader({
-          lightingModel: Cesium.LightingModel.PBR,
-          fragmentShaderText: `
-            void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
-              vec3 sunDir = czm_sunDirectionEC;
-              float isNight = smoothstep(0.1, -0.2, sunDir.z);
-              vec3 warmCityLight = vec3(1.0, 0.72, 0.38);
-              material.diffuse += warmCityLight * isNight * 0.30;
-            }
-          `
-        });
-      }
-    } catch (e) {}
-
     console.log('[Cesium] Google Photorealistic 3D Tiles loaded.');
   } catch (e) {
     console.warn('[Cesium] Google Photorealistic 3D Tiles unavailable:', e);
