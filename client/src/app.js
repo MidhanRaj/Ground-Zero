@@ -633,9 +633,9 @@
   hudClockInterval = setInterval(updateLocalClock, 1000);
   updateLocalClock();
 
-  function decodeWmoCode(code) {
-    if (code === 0) return { label: 'Clear ☀️', icon: '☀️' };
-    if ([1, 2, 3].includes(code)) return { label: 'Partly Cloudy ⛅', icon: '⛅' };
+  function decodeWmoCode(code, isDay = 1) {
+    if (code === 0) return isDay ? { label: 'Clear ☀️', icon: '☀️' } : { label: 'Clear Night 🌙', icon: '🌙' };
+    if ([1, 2, 3].includes(code)) return isDay ? { label: 'Partly Cloudy ⛅', icon: '⛅' } : { label: 'Partly Cloudy ☁️', icon: '☁️' };
     if ([45, 48].includes(code)) return { label: 'Foggy 🌫️', icon: '🌫️' };
     if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { label: 'Rain 🌧️', icon: '🌧️' };
     if ([71, 73, 75, 77, 85, 86].includes(code)) return { label: 'Snow ❄️', icon: '❄️' };
@@ -662,13 +662,14 @@
       const lat = Cesium.Math.toDegrees(cart.latitude);
 
       // 1. Fetch Weather & Timezone via Open-Meteo
-      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day&timezone=auto`;
       const wRes = await fetch(weatherUrl);
       if (wRes.ok) {
         const wData = await wRes.json();
         if (wData && wData.current) {
           const temp = Math.round(wData.current.temperature_2m);
-          const codeInfo = decodeWmoCode(wData.current.weather_code);
+          const isDay = wData.current.is_day !== undefined ? wData.current.is_day : 1;
+          const codeInfo = decodeWmoCode(wData.current.weather_code, isDay);
           const humidity = wData.current.relative_humidity_2m;
           const wind = Math.round(wData.current.wind_speed_10m);
 
