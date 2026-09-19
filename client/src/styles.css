@@ -89,6 +89,154 @@ body, html {
   font-weight: 400;
 }
 
+/* Change-token button in header */
+.change-token-btn {
+  margin-left: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+.change-token-btn:hover {
+  background: rgba(0, 229, 255, 0.15);
+  color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+/* ── Token Modal ─────────────────────────────────────────────────────────── */
+.token-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 10, 20, 0.88);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  padding: 24px;
+}
+
+.token-modal-card {
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 24px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,229,255,0.08);
+  padding: 48px 44px 40px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  animation: tokenFadeIn 0.35s cubic-bezier(0.22,1,0.36,1);
+}
+
+@keyframes tokenFadeIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.token-modal-icon {
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #00e5ff 0%, #3b82f6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  color: #0b0f19;
+  box-shadow: 0 8px 32px rgba(0,229,255,0.25);
+}
+
+.token-modal-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.token-modal-sub {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.token-modal-sub a,
+.token-modal-hint a {
+  color: var(--accent-cyan);
+  text-decoration: none;
+}
+.token-modal-sub a:hover,
+.token-modal-hint a:hover {
+  text-decoration: underline;
+}
+
+.token-input-row {
+  margin-bottom: 16px;
+}
+
+.token-input {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-family: 'Inter', monospace;
+  font-size: 13px;
+  padding: 13px 16px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.token-input::placeholder {
+  color: var(--text-dim);
+}
+.token-input:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(0,229,255,0.12);
+}
+
+.token-submit-btn {
+  width: 100%;
+  padding: 14px 24px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #00e5ff 0%, #3b82f6 100%);
+  color: #0b0f19;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: opacity 0.2s, transform 0.15s;
+  margin-bottom: 18px;
+  letter-spacing: -0.01em;
+}
+.token-submit-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.token-submit-btn:active {
+  transform: translateY(0);
+}
+
+.token-modal-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
 /* Live Stats Badge */
 .stats-badge {
   position: absolute;

@@ -3,8 +3,29 @@
  */
 
 (async function () {
-  // Cesium Ion Access Token
-  Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImtybFJiSV9FWHd3bDZXNnAiLCJqdGkiOiJkM2VmMjM0My0yNDllLTQwMWUtOTc3ZC1jYjViOGExMDM5NDMiLCJpZCI6NDk5OTU2LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3ODk3MzI5MTV9.p0ilve9qA4h9pC72Sbsq0h_GxLs_tB7T17v8vwlt0LU';
+  // ── Cesium Ion Access Token — set by user via token modal ──────────────────
+  const ionToken = localStorage.getItem('cesiumIonToken') || '';
+  if (!ionToken) {
+    // Show token modal and wait for it to be submitted before proceeding
+    await new Promise(resolve => {
+      const modal = document.getElementById('tokenModal');
+      const input = document.getElementById('tokenInput');
+      const btn   = document.getElementById('tokenSubmitBtn');
+      if (modal) modal.style.display = 'flex';
+      const submit = () => {
+        const val = (input ? input.value : '').trim();
+        if (!val) return;
+        localStorage.setItem('cesiumIonToken', val);
+        Cesium.Ion.defaultAccessToken = val;
+        if (modal) modal.style.display = 'none';
+        resolve();
+      };
+      if (btn) btn.addEventListener('click', submit);
+      if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    });
+  } else {
+    Cesium.Ion.defaultAccessToken = ionToken;
+  }
 
   // ── 1. Fetch Pipeline Metadata & Heightmaps ─────────────────────────────────
   const metaRes = await fetch('data/processed/metadata.json');
@@ -101,15 +122,18 @@
     navigationHelpButton: false
   });
 
-  // Performance optimization: resolution scaling cap for High-DPI / Retina displays
-  viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.25);
-  viewer.targetFrameRate  = 60;
+  // Performance: cap resolution on HiDPI, limit shadow quality
+  viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.0);
+  viewer.targetFrameRate = 60;
+  viewer.scene.requestRenderMode = false; // Always render for smooth feel
+  viewer.scene.maximumRenderTimeChange = Infinity;
 
-  // Optimize shadow map performance
+  // Shadow quality — keep distance short for perf
   if (viewer.shadowMap) {
-    viewer.shadowMap.maximumDistance = 2500.0;
-    viewer.shadowMap.size = 1024;
+    viewer.shadowMap.maximumDistance = 1500.0;
+    viewer.shadowMap.size = 512;
     viewer.shadowMap.softShadows = false;
+    viewer.shadowMap.normalOffset = true;
   }
 
   // Remove default imagery and add Bing Aerial satellite
@@ -148,16 +172,19 @@
   let buildingsTileset = null;
   try {
     buildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207, {
-      shadows: Cesium.ShadowMode.ENABLED,
-      maximumScreenSpaceError: 16,  // Smooth 60fps tile loading threshold
-      maximumMemoryUsage: 512,       // Limit GPU VRAM footprint
+      shadows: Cesium.ShadowMode.DISABLED,   // Shadows off = large GPU saving
+      maximumScreenSpaceError: 32,           // Higher = fewer tiles loaded = faster
+      maximumMemoryUsage: 256,               // Tighter VRAM cap prevents stalls
       skipLevelOfDetail: true,
-      preloadAncestors: false,
-      preloadSiblings: false
+      preloadAncestors: true,
+      preloadSiblings: false,
+      dynamicScreenSpaceError: true,         // Reduce quality of distant tiles
+      dynamicScreenSpaceErrorDensity: 0.00278,
+      dynamicScreenSpaceErrorFactor: 4.0,
+      dynamicScreenSpaceErrorHeightFalloff: 0.25
     });
     viewer.scene.primitives.add(buildingsTileset);
-    // Google tiles include their own terrain mesh — disable depth-test to avoid
-    // z-fighting where the Globe terrain and the 3D tile mesh overlap.
+    // Google tiles carry their own terrain — avoid z-fighting
     viewer.scene.globe.depthTestAgainstTerrain = false;
     console.log('[Cesium] Google Photorealistic 3D Tiles loaded.');
   } catch (e) {

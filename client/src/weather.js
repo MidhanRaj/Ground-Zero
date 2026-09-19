@@ -449,135 +449,104 @@ class WeatherSystem {
 
   /**
    * Build a 3D Cesium ParticleSystem for rain or snow placed around the camera.
+   * Altitude-aware: only shown when camera is below 8 000 m above terrain.
    * @param {'rain'|'snow'} type
    * @param {number} intensity  0..1
    */
   _build3DParticleSystem(type, intensity) {
-    const scene  = this.viewer.scene;
     const camera = this.viewer.camera;
+    const camPos = camera.positionCartographic;
+    if (!camPos) return null;
 
-    // Spread box half-size and fall height above camera
-    const spread   = 4000;   // ±4 km around camera (XY)
-    const fallFrom = 1800;   // particles start 1800 m above camera
-    const fallTo   = -200;   // fall 200 m below camera
+    // ── Altitude gate: hide precipitation when camera is too high ─────────
+    const MAX_PRECIP_ALT = 8000; // metres above ellipsoid
+    if (camPos.height > MAX_PRECIP_ALT) return null;
 
-    let emissionRate, speed, sizeMin, sizeMax, lifeMin, lifeMax, color;
+    // Scale the emitter spread to camera altitude so it feels right close-up
+    // At ground level (~200 m) spread = 120 m; at 3 km spread = 600 m
+    const altFraction = Math.max(0, Math.min(1, camPos.height / MAX_PRECIP_ALT));
+    const spread      = 100 + altFraction * 500;  // 100–600 m
+    const fallFrom    = Math.max(80, spread * 0.6);  // spawn above camera view
+    const particleAlt = camPos.height + fallFrom;
+
+    // ── Particle parameters ───────────────────────────────────────────────
+    let emissionRate, speed, sizeW, sizeH, life, color;
 
     if (type === 'rain') {
-      emissionRate = Math.round(300 + intensity * 900); // 300–1200 particles/s
-      speed        = 60 + intensity * 60;               // 60–120 m/s downward
-      sizeMin      = 1.5;  sizeMax = 3.0;
-      lifeMin      = (fallFrom - fallTo) / (speed + 60);
-      lifeMax      = lifeMin * 1.3;
-      color        = new Cesium.Color(0.75, 0.88, 1.0, 0.55 + intensity * 0.30);
+      emissionRate = Math.round(80 + intensity * 320);   // 80–400 /s
+      speed        = 40 + intensity * 40;                // 40–80 m/s
+      sizeW        = 1;   sizeH = 4 + intensity * 6;    // thin streaks
+      life         = (fallFrom * 1.5) / speed;
+      color        = new Cesium.Color(0.72, 0.88, 1.0, 0.55 + intensity * 0.30);
     } else { // snow
-      emissionRate = Math.round(60 + intensity * 140);  // 60–200 particles/s (much less dense)
-      speed        = 4 + intensity * 8;                 // 4–12 m/s gentle fall
-      sizeMin      = 4;    sizeMax = 9;
-      lifeMin      = (fallFrom - fallTo) / (speed + 5);
-      lifeMax      = lifeMin * 1.8;
-      color        = new Cesium.Color(1.0, 1.0, 1.0, 0.75);
+      emissionRate = Math.round(20 + intensity * 60);    // 20–80 /s
+      speed        = 2 + intensity * 5;                  // 2–7 m/s gentle
+      sizeW        = 3 + intensity * 4;  sizeH = sizeW;  // soft round flakes
+      life         = (fallFrom * 1.8) / (speed + 1);
+      color        = new Cesium.Color(1.0, 1.0, 1.0, 0.80);
     }
 
-    // Build particle image canvas
+    // ── Particle texture ──────────────────────────────────────────────────
+    const cw = 16, ch = (type === 'rain') ? 32 : 16;
     const canvas = document.createElement('canvas');
-    canvas.width = 16; canvas.height = (type === 'rain') ? 24 : 16;
+    canvas.width = cw; canvas.height = ch;
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+    ctx.clearRect(0, 0, cw, ch);
     if (type === 'rain') {
-      // Thin vertical elongated streak
-      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      grad.addColorStop(0, 'rgba(180,220,255,0)');
-      grad.addColorStop(0.2, 'rgba(180,220,255,0.85)');
-      grad.addColorStop(1, 'rgba(180,220,255,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(6, 0, 4, canvas.height);
+      const g = ctx.createLinearGradient(0, 0, 0, ch);
+      g.addColorStop(0,   'rgba(180,220,255,0)');
+      g.addColorStop(0.15,'rgba(180,220,255,0.9)');
+      g.addColorStop(0.85,'rgba(180,220,255,0.9)');
+      g.addColorStop(1,   'rgba(180,220,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(7, 0, 2, ch);
     } else {
-      // Soft radial snow flake dot
-      const grad = ctx.createRadialGradient(8, 8, 0, 8, 8, 7);
-      grad.addColorStop(0,   'rgba(255,255,255,1)');
-      grad.addColorStop(0.5, 'rgba(220,235,255,0.75)');
-      grad.addColorStop(1,   'rgba(200,220,255,0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(8, 8, 7, 0, Math.PI * 2);
-      ctx.fill();
+      const g = ctx.createRadialGradient(8, 8, 0, 8, 8, 7);
+      g.addColorStop(0,   'rgba(255,255,255,1)');
+      g.addColorStop(0.6, 'rgba(220,235,255,0.7)');
+      g.addColorStop(1,   'rgba(200,220,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(8, 8, 7, 0, Math.PI * 2); ctx.fill();
     }
     const imageUrl = canvas.toDataURL();
 
-    // Emitter at camera position + fallFrom meters altitude
-    const camPos  = camera.positionCartographic;
-    if (!camPos) return null;
-
+    // ── Place emitter just above the camera ───────────────────────────────
     const emitPos = Cesium.Cartesian3.fromRadians(
-      camPos.longitude, camPos.latitude,
-      camPos.height + fallFrom
+      camPos.longitude, camPos.latitude, particleAlt
     );
+    const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(emitPos);
 
-    // Gravity-aligned direction vectors (down relative to Earth surface at camera)
-    // Use Cesium's east-north-up frame to get the "down" vector
-    const enu    = Cesium.Transforms.eastNorthUpToFixedFrame(emitPos);
-    const downEC = new Cesium.Cartesian3(-enu[8], -enu[9], -enu[10]); // -Z column = down
-    Cesium.Cartesian3.normalize(downEC, downEC);
+    // ── Gravity force in local ENU space (-Z = down) ──────────────────────
+    const gravityForce = type === 'snow'
+      ? function(p, dt) {
+          const t = performance.now() / 2000;
+          p.velocity.x += Math.sin(t + p.position.x * 0.01) * 0.08 * dt;
+          p.velocity.y += Math.cos(t + p.position.y * 0.01) * 0.08 * dt;
+          p.velocity.z -= 1.5 * dt;    // gentle gravity
+        }
+      : function(p, dt) {
+          p.velocity.z -= 9.8 * dt;    // realistic gravity for rain
+        };
 
-    // Box emitter — spread particles in a horizontal slab above camera
-    const particleSystem = new Cesium.ParticleSystem({
+    return new Cesium.ParticleSystem({
       image: imageUrl,
-      color: color,
       startColor: color,
-      endColor:   new Cesium.Color(color.red, color.green, color.blue, 0.0),
-
+      endColor: new Cesium.Color(color.red, color.green, color.blue, 0.0),
       startScale: 1.0,
       endScale:   1.0,
-
-      minimumParticleLife: Math.max(lifeMin, 2),
-      maximumParticleLife: Math.max(lifeMax, 4),
-
-      minimumMass: 0.1,
-      maximumMass: 0.2,
-
-      minimumSpeed: speed * 0.8,
-      maximumSpeed: speed * 1.2,
-
-      imageSize: new Cesium.Cartesian2(sizeMin, sizeMax),
-
+      minimumParticleLife: Math.max(life * 0.7, 1.0),
+      maximumParticleLife: Math.max(life * 1.3, 2.0),
+      minimumSpeed: speed * 0.85,
+      maximumSpeed: speed * 1.15,
+      imageSize: new Cesium.Cartesian2(sizeW, sizeH),
       emissionRate: emissionRate,
-
-      // Box emitter for wide horizontal spread
-      emitter: new Cesium.BoxEmitter(new Cesium.Cartesian3(spread, spread, 200)),
-
-      // Place emitter at the altitude slab above camera
-      modelMatrix: Cesium.Transforms.eastNorthUpToFixedFrame(emitPos),
-
-      // Emit particles downward with slight horizontal drift for snow
-      emitterModelMatrix: Cesium.Matrix4.fromRotationTranslation(
-        Cesium.Matrix3.IDENTITY,
-        Cesium.Cartesian3.ZERO
-      ),
-
-      // Gravity-like acceleration — world-space down vector
-      // Cesium ParticleSystem uses local gravity via accelerations
-      lifetime: 1e9, // run forever
+      // SphereEmitter keeps particles compact around camera — no giant box
+      emitter: new Cesium.SphereEmitter(spread),
+      modelMatrix: modelMatrix,
+      lifetime: 1e9,
       loop: true,
-
-      // Gravity acceleration in local ENU: -Z is down (negative up)
-      forces: [
-        type === 'snow'
-          ? function(particle) {
-              // Gentle downward + slight swirl
-              const t = performance.now() / 1000;
-              particle.velocity.x += Math.sin(t * 0.5 + particle.position.x * 0.0001) * 0.04;
-              particle.velocity.y += Math.cos(t * 0.4 + particle.position.y * 0.0001) * 0.04;
-              particle.velocity.z -= 0.5; // gentle down
-            }
-          : function(particle) {
-              particle.velocity.z -= 9.8 * 0.016; // rain: gravity each frame
-            }
-      ]
+      forces: [gravityForce]
     });
-
-    return particleSystem;
   }
 
   /**

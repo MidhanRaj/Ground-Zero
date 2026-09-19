@@ -25,6 +25,26 @@
   <!-- Full-viewport Cesium Globe Container -->
   <div id="cesiumContainer"></div>
 
+  <!-- ── Cesium Ion Token Modal ───────────────────────────────────────────── -->
+  <div id="tokenModal" class="token-modal" style="display:none;">
+    <div class="token-modal-card">
+      <div class="token-modal-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <h2 class="token-modal-title">Ground Zeros</h2>
+      <p class="token-modal-sub">Enter your free <a href="https://ion.cesium.com/tokens" target="_blank" rel="noopener">Cesium Ion access token</a> to load satellite imagery and 3D buildings.</p>
+      <div class="token-input-row">
+        <input id="tokenInput" class="token-input" type="text" placeholder="Paste your Cesium Ion token here…" autocomplete="off" spellcheck="false">
+      </div>
+      <button id="tokenSubmitBtn" class="token-submit-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        Launch Globe
+      </button>
+      <p class="token-modal-hint">Token is stored in your browser — never sent anywhere. <a href="https://ion.cesium.com/tokens" target="_blank" rel="noopener">Get a free token →</a></p>
+    </div>
+  </div>
   <!-- Search Bar -->
   <div id="searchWrapper" class="search-wrapper">
     <div class="search-bar">
@@ -52,6 +72,11 @@
       <h1>Ground <span>Zeros</span></h1>
       <p class="subtitle">DEM Provenance & Bridge Carving</p>
     </div>
+    <button id="changeTokenBtn" class="change-token-btn" title="Change Cesium Ion Token" onclick="localStorage.removeItem('cesiumIonToken');location.reload();">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="11" cy="11" r="3"/><path d="M11 2v2m0 14v2M2 11h2m14 0h2M4.93 4.93l1.41 1.41m9.9 9.9 1.41 1.41M4.93 17.07l1.41-1.41m9.9-9.9 1.41-1.41"/>
+      </svg>
+    </button>
   </header>
 
   <!-- Live Location, Clock & Weather HUD Badge -->
@@ -275,10 +300,10 @@
   </button>
 
   <!-- Weather System -->
-  <script src="client/src/weather.js?v=1.0.4"></script>
+  <script src="client/src/weather.js?v=1.0.5"></script>
   <!-- Flight Simulator Mode -->
-  <script src="client/src/flight.js?v=1.0.4"></script>
+  <script src="client/src/flight.js?v=1.0.5"></script>
   <!-- Application Logic -->
-  <script src="client/src/app.js?v=1.0.4"></script>
+  <script src="client/src/app.js?v=1.0.5"></script>
 </body>
 </html>
