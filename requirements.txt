@@ -1,0 +1,6 @@
+numpy>=1.22.0
+opensimplex>=0.4.3
+rasterio>=1.2.0
+shapely>=1.8.0
+scipy>=1.8.0
+pillow>=9.0.0

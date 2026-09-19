@@ -1,0 +1,23 @@
+# Data directory (ignore raw/intermediate data, track processed web assets)
+/data/*
+!/data/processed/
+
+# Node dependencies
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+env/
+.env
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

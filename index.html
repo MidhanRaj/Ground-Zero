@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terrain Viewer with Honest Provenance — NASA Space Apps 2026</title>
+  <meta name="description" content="3D Terrain Viewer distinguishing direct observations from inferred and interpolated elevation data. NASA Space Apps 2026.">
+
+  <!-- CesiumJS CSS & CDN Initialization -->
+  <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css">
+  <script>
+    window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/';
+  </script>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- App Styles -->
+  <link rel="stylesheet" href="client/src/styles.css">
+</head>
+<body>
+  <!-- Full-viewport Cesium Globe Container -->
+  <div id="cesiumContainer"></div>
+
+  <!-- Search Bar -->
+  <div id="searchWrapper" class="search-wrapper">
+    <div class="search-bar">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+      </svg>
+      <input id="searchInput" type="text" placeholder="Search any place on Earth…" autocomplete="off" spellcheck="false">
+      <button id="searchBtn" aria-label="Search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
+    <div id="searchResults" class="search-results" style="display:none;"></div>
+  </div>
+
+  <!-- Glassmorphic Header Badge -->
+  <header class="app-header">
+    <div class="logo-mark">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div class="header-titles">
+      <h1>Honest Terrain <span>Viewer</span></h1>
+      <p class="subtitle">NASA Space Apps 2026 • DEM Provenance & Bridge Carving</p>
+    </div>
+  </header>
+
+  <!-- Live Observation Stats Badge -->
+  <div class="stats-badge" id="statsBadge">
+    <div class="stat-item">
+      <span class="stat-label">Observed Data:</span>
+      <span class="stat-value observed" id="obsPercentVal">98.2%</span>
+    </div>
+    <div class="stat-bar-container">
+      <div class="stat-bar-fill" id="obsBarFill" style="width: 98.2%;"></div>
+    </div>
+    <div class="stat-legend">
+      <span class="dot obs"></span> Direct Observation
+      <span class="dot inf"></span> Inferred / Carved / Filled
+    </div>
+  </div>
+
+  <!-- Control Panel -->
+  <aside class="control-panel">
+    <div class="panel-header">
+      <h2>Terrain & Layer Controls</h2>
+    </div>
+
+    <!-- Elevation Source Toggle -->
+    <section class="control-section">
+      <label class="section-label">Elevation Model Source</label>
+      <div class="toggle-group">
+        <label class="toggle-option" id="labelAsDelivered">
+          <input type="radio" name="elevationSource" value="uncarved" id="radioAsDelivered">
+          <span class="radio-custom"></span>
+          <span class="option-text">
+            <strong>As Delivered</strong>
+            <small>Raw DEM with baked bridge dam</small>
+          </span>
+        </label>
+        
+        <label class="toggle-option active" id="labelAfterCarving">
+          <input type="radio" name="elevationSource" value="carved" id="radioAfterCarving" checked>
+          <span class="radio-custom"></span>
+          <span class="option-text">
+            <strong>After Carving</strong>
+            <small>Restored valley + 3D bridge</small>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Observation Mask Mode -->
+    <section class="control-section">
+      <button class="action-btn" id="btnObsOnly">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <span id="btnObsOnlyText">Show Observations Only</span>
+      </button>
+    </section>
+
+    <!-- Layer Stack Toggles -->
+    <section class="control-section">
+      <label class="section-label">Layer Stack</label>
+      
+      <div class="checkbox-group">
+        <label class="checkbox-option buildings-option">
+          <input type="checkbox" id="chkBuildings" checked>
+          <span class="checkbox-custom"></span>
+          <span class="option-title">🌍 Google Photorealistic 3D</span>
+        </label>
+
+        <label class="checkbox-option">
+          <input type="checkbox" id="chkProvenance" checked>
+          <span class="checkbox-custom"></span>
+          <span class="option-title">Provenance Overlay</span>
+        </label>
+        
+        <label class="checkbox-option">
+          <input type="checkbox" id="chkStructures" checked>
+          <span class="checkbox-custom"></span>
+          <span class="option-title">3D Bridge Structures</span>
+        </label>
+
+        <label class="checkbox-option">
+          <input type="checkbox" id="chkSeaSurface">
+          <span class="checkbox-custom"></span>
+          <span class="option-title">Sea Surface (0m Ellipsoid)</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Vertical Exaggeration Slider -->
+    <section class="control-section">
+      <div class="slider-header">
+        <label for="sliderExaggeration" class="section-label">Vertical Exaggeration</label>
+        <span class="slider-val" id="exaggerationVal">1.0×</span>
+      </div>
+      <input type="range" id="sliderExaggeration" min="1" max="10" step="0.5" value="1.0">
+    </section>
+
+    <!-- ── Weather & Sky ─────────────────────────────────── -->
+    <section class="control-section" id="weatherSection">
+      <div class="weather-header" id="weatherToggleHeader">
+        <label class="section-label" style="cursor:pointer;user-select:none;">
+          🌤️ Weather &amp; Sky
+        </label>
+        <span class="weather-collapse-icon" id="weatherCollapseIcon">▾</span>
+      </div>
+
+      <div id="weatherBody">
+
+        <!-- Day / Night Cycle -->
+        <div class="weather-row">
+          <label class="checkbox-option">
+            <input type="checkbox" id="chkDayNight">
+            <span class="checkbox-custom"></span>
+            <span class="option-title">☀️ Day / Night Cycle</span>
+          </label>
+        </div>
+
+        <!-- Speed selector (hidden when cycle is off) -->
+        <div class="weather-sub" id="dnSpeedRow" style="display:none;">
+          <label class="section-label" style="font-size:11px;">Speed</label>
+          <div class="weather-pills">
+            <button class="weather-pill active" id="speedBtn1"    data-mult="1">Real-time</button>
+            <button class="weather-pill"         id="speedBtn10"  data-mult="10">10×</button>
+            <button class="weather-pill"         id="speedBtn100" data-mult="100">100×</button>
+            <button class="weather-pill"         id="speedBtnManual" data-mult="0">Manual</button>
+          </div>
+        </div>
+
+        <!-- Manual hour slider (only when Manual speed selected) -->
+        <div class="weather-sub" id="manualHourRow" style="display:none;">
+          <div class="slider-header">
+            <label class="section-label" style="font-size:11px;">Hour of Day</label>
+            <span class="slider-val" id="manualHourVal">12:00</span>
+          </div>
+          <input type="range" id="sliderManualHour" min="0" max="24" step="0.25" value="12">
+        </div>
+
+        <!-- Clouds -->
+        <div class="weather-row" style="margin-top:6px;">
+          <label class="checkbox-option">
+            <input type="checkbox" id="chkClouds">
+            <span class="checkbox-custom"></span>
+            <span class="option-title">🌥️ Procedural Clouds</span>
+          </label>
+        </div>
+
+        <div class="weather-sub" id="cloudDensityRow" style="display:none;">
+          <div class="slider-header">
+            <label class="section-label" style="font-size:11px;">Cloud Density</label>
+            <span class="slider-val" id="cloudDensityVal">50%</span>
+          </div>
+          <input type="range" id="sliderCloudDensity" min="0" max="100" step="5" value="50">
+        </div>
+
+        <!-- Precipitation -->
+        <div style="margin-top:6px;">
+          <label class="section-label" style="font-size:11px;">🌧️ Precipitation</label>
+          <div class="weather-pills" style="margin-top:6px;">
+            <button class="weather-pill active" id="precipNone">None</button>
+            <button class="weather-pill"        id="precipRain">🌧 Rain</button>
+            <button class="weather-pill"        id="precipSnow">❄️ Snow</button>
+          </div>
+        </div>
+
+        <div class="weather-sub" id="precipIntensityRow" style="display:none;">
+          <div class="slider-header">
+            <label class="section-label" style="font-size:11px;">Intensity</label>
+            <span class="slider-val" id="precipIntensityVal">50%</span>
+          </div>
+          <input type="range" id="sliderPrecipIntensity" min="10" max="100" step="5" value="50">
+        </div>
+
+      </div><!-- /weatherBody -->
+    </section>
+
+    <!-- Data Lineage Info Footer -->
+    <footer class="panel-footer">
+      <div class="lineage-tag">
+        <span>Datum: WGS84 Ellipsoid (EGM2008 -31.8m)</span>
+      </div>
+    </footer>
+  </aside>
+
+  <!-- Navigation Hint Bar -->
+  <div class="nav-hint">
+    <span>🖱️ <kbd>Left drag</kbd> Pan</span>
+    <span>🖱️ <kbd>Right drag</kbd> Tilt</span>
+    <span>🖱️ <kbd>Scroll</kbd> Zoom</span>
+    <span>⌨️ <kbd>Ctrl+drag</kbd> Rotate</span>
+  </div>
+
+  <!-- Flight Mode FAB Button -->
+  <button id="btnFlightMode" class="flight-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3.5s-2.5 0-4 1.5L13.5 8.5 5.3 6.7c-.5-.1-1 .1-1.3.5l-.8.9c-.3.4-.2 1 .2 1.3l5.5 4.1-3.2 3.2-2.3-.5c-.3-.1-.7 0-.9.3l-.4.5c-.2.3-.1.8.2 1l2.5 1.8 1.8 2.5c.2.3.7.4 1 .2l.5-.4c.3-.2.4-.6.3-.9l-.5-2.3 3.2-3.2 4.1 5.5c.3.4.9.5 1.3.2l.9-.8c.4-.3.6-.8.5-1.3z"/>
+    </svg>
+    <span id="btnFlightModeText">Flight Mode (F)</span>
+  </button>
+
+  <!-- Weather System -->
+  <script src="client/src/weather.js"></script>
+  <!-- Flight Simulator Mode -->
+  <script src="client/src/flight.js"></script>
+  <!-- Application Logic -->
+  <script src="client/src/app.js"></script>
+</body>
+</html>
