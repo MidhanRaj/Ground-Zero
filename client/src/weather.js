@@ -45,7 +45,6 @@ class WeatherSystem {
     this._initSky();
     this._initClock();
     this._initVolumetricClouds();
-    this._initNightLights();
   }
 
   /* ─────────────────────────────────────────────────────────────────────────
@@ -119,57 +118,6 @@ class WeatherSystem {
     clock.shouldAnimate = false;
     clock.multiplier    = 1;
     clock.clockStep     = Cesium.ClockStep.SYSTEM_CLOCK_MULTIPLIER;
-  }
-
-  /* ─────────────────────────────────────────────────────────────────────────
-     NIGHT CITY LIGHTS (NASA Black Marble / Cesium Ion Asset 3812)
-  ───────────────────────────────────────────────────────────────────────── */
-
-  async _initNightLights() {
-    const scene = this.viewer.scene;
-    try {
-      let nightProvider;
-      try {
-        // Cesium Ion Asset 3812 (Earth at Night / Black Marble)
-        nightProvider = await Cesium.IonImageryProvider.fromAssetId(3812);
-      } catch (e) {
-        nightProvider = new Cesium.UrlTemplateImageryProvider({
-          url: 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/VIIRS_Black_Marble/default/2016-01-01/500m/{z}/{y}/{x}.png',
-          credit: 'NASA Black Marble Night City Lights',
-          maximumLevel: 8
-        });
-      }
-
-      this._nightLightsLayer = this.viewer.imageryLayers.addImageryProvider(nightProvider);
-      this._nightLightsLayer.alpha = 0.85;
-
-      // Dynamic Day/Night fading: city lights glow brightly at night and fade out during daytime
-      scene.preRender.addEventListener(() => {
-        try {
-          if (!this._nightLightsLayer) return;
-          const clockTime = (this.viewer && this.viewer.clock) ? this.viewer.clock.currentTime : Cesium.JulianDate.now();
-          if (Cesium.Simon1994PlanetaryPositions && this.viewer.camera) {
-            const sunPos = Cesium.Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame(clockTime);
-            if (sunPos) {
-              const cameraPosNorm = Cesium.Cartesian3.normalize(this.viewer.camera.position, new Cesium.Cartesian3());
-              const sunNorm = Cesium.Cartesian3.normalize(sunPos, new Cesium.Cartesian3());
-              const dot = Cesium.Cartesian3.dot(cameraPosNorm, sunNorm);
-
-              // Fade in city lights as sun sets (dot < 0.25)
-              if (dot < 0.25) {
-                const nightFactor = Math.min(1.0, (0.25 - dot) / 0.5);
-                this._nightLightsLayer.alpha = 0.85 * nightFactor;
-                this._nightLightsLayer.show = true;
-              } else {
-                this._nightLightsLayer.show = false;
-              }
-            }
-          }
-        } catch (err) {}
-      });
-    } catch (err) {
-      console.warn('[NightLights] Could not initialize night lights:', err);
-    }
   }
 
   /**
