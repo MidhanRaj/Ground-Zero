@@ -5,7 +5,25 @@
 (async function () {
   // ── Cesium Ion Access Token — set by user via token modal ──────────────────
   const ionToken = localStorage.getItem('cesiumIonToken') || '';
-  if (ionToken) {
+  if (!ionToken) {
+    // Show token modal and wait for it to be submitted before proceeding
+    await new Promise(resolve => {
+      const modal = document.getElementById('tokenModal');
+      const input = document.getElementById('tokenInput');
+      const btn   = document.getElementById('tokenSubmitBtn');
+      if (modal) modal.style.display = 'flex';
+      const submit = () => {
+        const val = (input ? input.value : '').trim();
+        if (!val) return;
+        localStorage.setItem('cesiumIonToken', val);
+        Cesium.Ion.defaultAccessToken = val;
+        if (modal) modal.style.display = 'none';
+        resolve();
+      };
+      if (btn) btn.addEventListener('click', submit);
+      if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    });
+  } else {
     Cesium.Ion.defaultAccessToken = ionToken;
   }
 
@@ -45,6 +63,7 @@
         const tileRect = tilingScheme.tileXYToRectangle(x, y, level);
         const tileData = new Float32Array(meta.width * meta.height);
         
+        // Fast non-intersection check: return immediately if tile does not touch the heightmap patch
         if (tileRect.east < meta.west || tileRect.west > meta.east ||
             tileRect.north < meta.south || tileRect.south > meta.north) {
           return tileData;
@@ -76,26 +95,24 @@
   const carvedTerrainProvider   = createTerrainProvider(carvedHeightmap);
   const uncarvedTerrainProvider = createTerrainProvider(uncarvedHeightmap);
 
-  // ── 3. Initialize Viewer IMMEDIATELY ────────────────────────────────────────
+  // ── 3. Load Cesium World Terrain (real global 3D) ───────────────────────────
   let worldTerrainProvider;
   try {
-    if (Cesium.Ion.defaultAccessToken) {
-      worldTerrainProvider = await Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
-        requestVertexNormals: true,
-        requestWaterMask: true
-      });
-    } else {
-      worldTerrainProvider = new Cesium.EllipsoidTerrainProvider();
-    }
+    worldTerrainProvider = await Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
+      requestVertexNormals: true,
+      requestWaterMask: true
+    });
   } catch (e) {
-    console.warn('[Cesium] World Terrain fallback:', e);
+    console.warn('[Cesium] World Terrain unavailable, using ellipsoid.', e);
     worldTerrainProvider = new Cesium.EllipsoidTerrainProvider();
   }
 
+  // ── 4. Initialize Viewer ────────────────────────────────────────────────────
+  // CRITICAL: Do NOT pass imageryProvider to constructor — deprecated in ≥1.104
   const viewer = new Cesium.Viewer('cesiumContainer', {
-    terrainProvider: worldTerrainProvider,
+    terrainProvider: worldTerrainProvider,  // Real 3D globally by default
     baseLayerPicker: false,
-    geocoder: false,
+    geocoder: false,          // We add our own search bar
     homeButton: false,
     infoBox: false,
     sceneModePicker: false,
@@ -105,82 +122,32 @@
     navigationHelpButton: false
   });
 
-  // Performance caps & Globe guaranteed visibility
+  // Performance: cap resolution on HiDPI, limit shadow quality
   viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.0);
   viewer.targetFrameRate = 60;
-  viewer.scene.requestRenderMode = false;
+  viewer.scene.requestRenderMode = false; // Always render for smooth feel
   viewer.scene.maximumRenderTimeChange = Infinity;
-  viewer.scene.globe.show = true;
 
-  // Mount guaranteed base map imagery (OpenStreetMap) so globe is ALWAYS 100% visible
-  const baseImagery = new Cesium.OpenStreetMapImageryProvider({
-    url: 'https://a.tile.openstreetmap.org/'
-  });
-  viewer.imageryLayers.removeAll();
-  viewer.imageryLayers.addImageryProvider(baseImagery);
-
-  // Async loader for Ion Assets (Satellite Imagery + Google 3D Tiles)
-  let buildingsTileset = null;
-  async function loadIonAssets() {
-    if (!Cesium.Ion.defaultAccessToken) return;
-
-    try {
-      const satellite = await Cesium.IonImageryProvider.fromAssetId(2);
-      viewer.imageryLayers.removeAll();
-      viewer.imageryLayers.addImageryProvider(satellite);
-      console.log('[Cesium] Ion Satellite imagery loaded.');
-    } catch (e) {
-      console.warn('[Cesium] Ion Satellite imagery unavailable:', e);
-    }
-
-    try {
-      if (buildingsTileset) {
-        try { viewer.scene.primitives.remove(buildingsTileset); } catch (_) {}
-      }
-      buildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207, {
-        shadows: Cesium.ShadowMode.DISABLED,
-        maximumScreenSpaceError: 24,
-        maximumMemoryUsage: 2048,
-        skipLevelOfDetail: true,
-        preloadAncestors: true,
-        preloadSiblings: true,
-        cullWithChildrenBounds: true,
-        dynamicScreenSpaceError: true,
-        dynamicScreenSpaceErrorDensity: 0.002,
-        dynamicScreenSpaceErrorFactor: 5.0,
-        dynamicScreenSpaceErrorHeightFalloff: 0.25
-      });
-      viewer.scene.primitives.add(buildingsTileset);
-      viewer.scene.globe.depthTestAgainstTerrain = false;
-      console.log('[Cesium] Google Photorealistic 3D Tiles loaded.');
-    } catch (e) {
-      console.warn('[Cesium] Google Photorealistic 3D Tiles unavailable:', e);
-    }
+  // Shadow quality — keep distance short for perf
+  if (viewer.shadowMap) {
+    viewer.shadowMap.maximumDistance = 1500.0;
+    viewer.shadowMap.size = 512;
+    viewer.shadowMap.softShadows = false;
+    viewer.shadowMap.normalOffset = true;
   }
 
-  // Load Ion assets if token exists; otherwise show token modal over live globe
-  if (ionToken) {
-    loadIonAssets();
-  } else {
-    const modal = document.getElementById('tokenModal');
-    const input = document.getElementById('tokenInput');
-    const btn   = document.getElementById('tokenSubmitBtn');
-    const skip  = document.getElementById('tokenSkipBtn');
-    if (modal) modal.style.display = 'flex';
-
-    const handleTokenSubmit = () => {
-      const val = (input ? input.value : '').trim();
-      if (val) {
-        localStorage.setItem('cesiumIonToken', val);
-        Cesium.Ion.defaultAccessToken = val;
-        loadIonAssets();
-      }
-      if (modal) modal.style.display = 'none';
-    };
-
-    if (btn) btn.addEventListener('click', handleTokenSubmit);
-    if (skip) skip.addEventListener('click', () => { if (modal) modal.style.display = 'none'; });
-    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') handleTokenSubmit(); });
+  // Remove default imagery and add Bing Aerial satellite
+  viewer.imageryLayers.removeAll();
+  try {
+    const satellite = await Cesium.IonImageryProvider.fromAssetId(2);
+    viewer.imageryLayers.addImageryProvider(satellite);
+  } catch (e) {
+    console.warn('[Cesium] Bing Aerial unavailable, using OSM.', e);
+    viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      credit: '© OpenStreetMap contributors',
+      maximumLevel: 19
+    }));
   }
 
   // ── Globe & Atmosphere (Flight Sim look) ──────────────────────────────────
@@ -195,6 +162,32 @@
   // Atmospheric scattering & fog
   viewer.scene.skyAtmosphere.show = true;
   viewer.scene.fog.enabled = false;
+
+  // ── Google Photorealistic 3D Tiles ─────────────────────────────────────────
+  // Ion asset 2275207 — real photogrammetry textures from Google Maps aerial
+  // imagery. Covers the globe including India.
+  let buildingsTileset = null;
+  try {
+    buildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207, {
+      shadows: Cesium.ShadowMode.DISABLED,   // Shadows off = large GPU saving
+      maximumScreenSpaceError: 24,           // Smooth balance of detail and rendering speed
+      maximumMemoryUsage: 2048,              // 2GB VRAM cache prevents tile eviction stutter
+      skipLevelOfDetail: true,
+      preloadAncestors: true,
+      preloadSiblings: true,
+      cullWithChildrenBounds: true,
+      dynamicScreenSpaceError: true,         // Reduce quality of distant tiles
+      dynamicScreenSpaceErrorDensity: 0.002,
+      dynamicScreenSpaceErrorFactor: 5.0,
+      dynamicScreenSpaceErrorHeightFalloff: 0.25
+    });
+    viewer.scene.primitives.add(buildingsTileset);
+    // Google tiles carry their own terrain — avoid z-fighting
+    viewer.scene.globe.depthTestAgainstTerrain = false;
+    console.log('[Cesium] Google Photorealistic 3D Tiles loaded.');
+  } catch (e) {
+    console.warn('[Cesium] Google Photorealistic 3D Tiles unavailable:', e);
+  }
 
   // ── 5. Google Earth–style Navigation ────────────────────────────────────────
   // Google Earth: left-drag = pan/rotate, right-drag = TILT, scroll = zoom
@@ -641,51 +634,46 @@
   updateLocalClock();
 
   function decodeWmoCode(code, isDay = 1, windSpeed = 0) {
-    const timeTag = isDay ? 'Day' : 'Night';
+    const isNight = (isDay === 0);
+    const dayNightCaption = isNight ? 'Night 🌙' : 'Day ☀️';
 
-    // High wind condition
-    if (windSpeed > 32 && [0, 1, 2, 3].includes(code)) {
-      return { label: `${timeTag} • Windy`, icon: isDay ? '🌬️' : '🌬️🌙' };
-    }
+    let conditionText = 'Clear';
+    let icon = isNight ? '🌙' : '☀️';
 
-    // Clear sky
     if (code === 0) {
-      return isDay 
-        ? { label: 'Day • Clear', icon: '☀️' } 
-        : { label: 'Night • Clear', icon: '🌙' };
+      conditionText = isNight ? 'Clear Night' : 'Clear Sky';
+      icon = isNight ? '🌙' : '☀️';
+    } else if ([1, 2, 3].includes(code)) {
+      conditionText = 'Partly Cloudy';
+      icon = isNight ? '🌙☁️' : '⛅';
+    } else if ([45, 48].includes(code)) {
+      conditionText = 'Foggy';
+      icon = isNight ? '🌙🌫️' : '🌫️';
+    } else if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+      conditionText = 'Rainy';
+      icon = isNight ? '🌙🌧️' : '🌧️';
+    } else if ([71, 73, 75, 77, 85, 86].includes(code)) {
+      conditionText = 'Snowy';
+      icon = isNight ? '🌙❄️' : '❄️';
+    } else if ([95, 96, 99].includes(code)) {
+      conditionText = 'Thunderstorm';
+      icon = '🌩️';
+    } else {
+      conditionText = 'Overcast';
+      icon = isNight ? '🌙☁️' : '☁️';
     }
 
-    // Partly cloudy / Cloudy
-    if ([1, 2, 3].includes(code)) {
-      return isDay 
-        ? { label: 'Day • Cloudy', icon: '⛅' } 
-        : { label: 'Night • Cloudy', icon: '☁️🌙' };
+    let weatherCaption = conditionText;
+    if (windSpeed >= 20 && !['Rainy', 'Snowy', 'Thunderstorm'].includes(conditionText)) {
+      weatherCaption += ' • Windy 🌬️';
     }
 
-    // Foggy
-    if ([45, 48].includes(code)) {
-      return { label: `${timeTag} • Foggy`, icon: '🌫️' };
-    }
-
-    // Rainy
-    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
-      return { label: `${timeTag} • Rainy`, icon: '🌧️' };
-    }
-
-    // Snowy
-    if ([71, 73, 75, 77, 85, 86].includes(code)) {
-      return { label: `${timeTag} • Snowy`, icon: '❄️' };
-    }
-
-    // Thunderstorm
-    if ([95, 96, 99].includes(code)) {
-      return { label: `${timeTag} • Thunderstorm`, icon: '🌩️' };
-    }
-
-    // Overcast
-    return isDay
-      ? { label: 'Day • Overcast', icon: '☁️' }
-      : { label: 'Night • Overcast', icon: '☁️🌙' };
+    return {
+      label: weatherCaption,
+      icon,
+      dayNightCaption,
+      isNight
+    };
   }
 
   async function updateLocationAndWeather() {
@@ -706,7 +694,7 @@
       const lon = Cesium.Math.toDegrees(cart.longitude);
       const lat = Cesium.Math.toDegrees(cart.latitude);
 
-      // 1. Fetch Weather & Timezone via Open-Meteo
+      // 1. Fetch Weather & Timezone via Open-Meteo (including is_day indicator)
       const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day&timezone=auto`;
       const wRes = await fetch(weatherUrl);
       if (wRes.ok) {
@@ -715,12 +703,22 @@
           const temp = Math.round(wData.current.temperature_2m);
           const isDay = wData.current.is_day !== undefined ? wData.current.is_day : 1;
           const wind = Math.round(wData.current.wind_speed_10m);
-          const codeInfo = decodeWmoCode(wData.current.weather_code, isDay, wind);
           const humidity = wData.current.relative_humidity_2m;
-          const wind = Math.round(wData.current.wind_speed_10m);
+
+          const codeInfo = decodeWmoCode(wData.current.weather_code, isDay, wind);
 
           if (hudWeatherVal) hudWeatherVal.innerText = `${temp}°C ${codeInfo.icon}`;
           if (hudWeatherSubText) hudWeatherSubText.innerText = `${codeInfo.label} • Wind ${wind} km/h • Humidity ${humidity}%`;
+
+          const hudDayNightTag = document.getElementById('hudDayNightTag');
+          if (hudDayNightTag) {
+            hudDayNightTag.innerText = codeInfo.dayNightCaption;
+            if (codeInfo.isNight) {
+              hudDayNightTag.classList.add('night');
+            } else {
+              hudDayNightTag.classList.remove('night');
+            }
+          }
 
           // Sync real-time weather & wind speed to 3D volumetric moving clouds
           if (weather && weather.setWeatherCondition) {
