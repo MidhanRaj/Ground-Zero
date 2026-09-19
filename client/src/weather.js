@@ -37,18 +37,12 @@ class WeatherSystem {
   _initSky() {
     const scene = this.viewer.scene;
 
-    // Atmosphere
+    // Enable High Dynamic Range & Per-Fragment Rayleigh/Mie Atmosphere Scattering
+    scene.highDynamicRange = true;
     scene.skyAtmosphere.show = true;
 
-    // Stars (SkyBox)
-    if (scene.skyBox) scene.skyBox.show = true;
-
-    // Sun & Moon
-    scene.sun.show  = true;
-    scene.moon.show = true;
-
-    // Richer Rayleigh → vivid blue daytime sky, warm orange sunsets
     try {
+      scene.skyAtmosphere.perFragmentAtmosphere = true;
       scene.skyAtmosphere.atmosphereRayleighCoefficient =
         new Cesium.Cartesian3(5.5e-6, 13.0e-6, 28.4e-6);
       scene.skyAtmosphere.atmosphereMieCoefficient =
@@ -58,8 +52,31 @@ class WeatherSystem {
       scene.skyAtmosphere.atmosphereMieScaleHeight      = 3200.0;
       scene.skyAtmosphere.atmosphereLightIntensity      = 15.0;
     } catch (e) {
-      // Older Cesium builds may not have all atmosphere uniforms — safe to ignore
+      // Older Cesium builds safe fallback
     }
+
+    // Stars (SkyBox) & Sun/Moon
+    if (scene.skyBox) scene.skyBox.show = true;
+    scene.sun.show  = true;
+    scene.moon.show = true;
+
+    // Dynamic Day/Night Starfield: Hide background stars during daytime atmosphere facing, show at night or space
+    scene.preRender.addEventListener(() => {
+      if (!scene.skyBox) return;
+      const cameraPos = scene.camera.positionCartographic;
+      if (cameraPos && cameraPos.height < 150000) {
+        // Below 150km: check if camera location is illuminated by the sun
+        const sunPos = Cesium.Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame(scene.clock.currentTime);
+        if (sunPos) {
+          const normal = Cesium.Cartesian3.normalize(scene.camera.position, new Cesium.Cartesian3());
+          const sunNormal = Cesium.Cartesian3.normalize(sunPos, new Cesium.Cartesian3());
+          const dot = Cesium.Cartesian3.dot(normal, sunNormal);
+          scene.skyBox.show = dot < -0.05; // Hide stars on sunlit daytime side
+        }
+      } else {
+        scene.skyBox.show = true; // Always show stars in deep space
+      }
+    });
 
     // Globe receives correct sun lighting
     scene.globe.enableLighting = true;
@@ -128,25 +145,24 @@ class WeatherSystem {
     const cart  = this.viewer.camera.positionCartographic;
     const lat   = Cesium.Math.toDegrees(cart.latitude);
     const lon   = Cesium.Math.toDegrees(cart.longitude);
-    const count = Math.round(20 + this._cloudDensity * 200);
+    const count = Math.round(15 + this._cloudDensity * 120);
 
     for (let i = 0; i < count; i++) {
-      const dLon   = (Math.random() - 0.5) * 5.0;
-      const dLat   = (Math.random() - 0.5) * 5.0;
-      const alt    = 1200 + Math.random() * 4000;
-      const w      = 800  + Math.random() * 3500;
-      const bright = 0.78 + Math.random() * 0.22;
+      const dLon   = (Math.random() - 0.5) * 4.5;
+      const dLat   = (Math.random() - 0.5) * 4.5;
+      const alt    = 1800 + Math.random() * 3200;
+      const w      = 1200 + Math.random() * 4500;
+      const bright = 0.85 + Math.random() * 0.15;
 
       try {
         this._cloudCollection.add({
           position:    Cesium.Cartesian3.fromDegrees(lon + dLon, lat + dLat, alt),
-          scale:       new Cesium.Cartesian2(w, w * 0.30),
-          maximumSize: new Cesium.Cartesian3(w * 0.5, w * 0.14, w * 0.28),
-          slice:       0.36,
+          scale:       new Cesium.Cartesian2(w, w * 0.35),
+          maximumSize: new Cesium.Cartesian3(w * 0.6, w * 0.2, w * 0.35),
+          slice:       0.2 + Math.random() * 0.6,
           brightness:  bright
         });
       } catch (e) {
-        // Bail if the CumulusCloud API is unavailable in this Cesium build
         break;
       }
     }
