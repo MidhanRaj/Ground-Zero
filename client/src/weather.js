@@ -299,20 +299,64 @@ class WeatherSystem {
   }
 
   /**
-   * Set real-time weather conditions to dynamically cluster and tint clouds.
+   * Set real-time weather conditions to dynamically cluster and tint clouds
+   * AND auto-drive 3D precipitation from the WMO weather code.
    */
   setWeatherCondition(weatherCode, windSpeed) {
     this._currentWeatherCode = weatherCode;
     if (windSpeed !== undefined && windSpeed > 0) {
       this._cloudWindSpeed = windSpeed;
     }
+
+    // ── Auto-clouds based on weather code ──────────────────────────────────
+    // Any weather other than clear auto-enables clouds
+    const cloudCodes = [1, 2, 3, 45, 48, 51, 53, 55, 56, 57,
+                        61, 63, 65, 66, 67, 71, 73, 75, 77,
+                        80, 81, 82, 85, 86, 95, 96, 99];
+    const shouldHaveClouds = cloudCodes.includes(weatherCode);
+
+    // If clouds were manually enabled leave them on; if weather demands them, turn on too
+    if (shouldHaveClouds && !this._cloudsEnabled) {
+      this._cloudsEnabled = true;
+      if (this._cloudBillboardCollection) this._cloudBillboardCollection.show = true;
+    } else if (!shouldHaveClouds && this._cloudsEnabled && !this._cloudsManuallyEnabled) {
+      this._cloudsEnabled = false;
+      if (this._cloudBillboardCollection) this._cloudBillboardCollection.show = false;
+    }
+
     if (this._cloudsEnabled) {
       this._spawnVolumetricClouds();
+    }
+
+    // ── Auto-precipitation from weather code ───────────────────────────────
+    const rainCodes  = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82];
+    const snowCodes  = [71, 73, 75, 77, 85, 86];
+    const stormCodes = [95, 96, 99];
+
+    let autoType      = 'none';
+    let autoIntensity = 0.0;
+
+    if (rainCodes.includes(weatherCode) || stormCodes.includes(weatherCode)) {
+      autoType = 'rain';
+      // Light drizzle = 51/53/56, moderate = 61/63, heavy = 65/67/80/81/82/storm
+      if ([51, 53, 56].includes(weatherCode))          autoIntensity = 0.35;
+      else if ([55, 57, 61, 63, 66, 80].includes(weatherCode)) autoIntensity = 0.60;
+      else                                              autoIntensity = 0.90;
+    } else if (snowCodes.includes(weatherCode)) {
+      autoType = 'snow';
+      if ([71, 77, 85].includes(weatherCode))          autoIntensity = 0.35;
+      else if ([73, 86].includes(weatherCode))         autoIntensity = 0.60;
+      else                                              autoIntensity = 0.85;
+    }
+
+    // Only update precipitation if it's weather-driven (don't override manual choice)
+    if (!this._precipManual) {
+      this._set3DPrecipitation(autoType, autoIntensity);
     }
   }
 
   /**
-   * Toggle global satellite cloud imagery layer (Ion / NASA GIBS).
+   * Toggle global satellite cloud imagery layer (NASA GIBS).
    */
   setSatelliteClouds(enabled) {
     if (enabled) {
@@ -338,8 +382,10 @@ class WeatherSystem {
 
   /**
    * Toggle 3D procedural/textured clouds on/off and optionally set density.
+   * Marks clouds as manually enabled so weather won't auto-disable them.
    */
   setClouds(enabled, density) {
+    this._cloudsManuallyEnabled = enabled;
     this._cloudsEnabled = enabled;
     if (density !== undefined) this._cloudDensity = density;
 
@@ -359,160 +405,238 @@ class WeatherSystem {
   }
 
   /* ─────────────────────────────────────────────────────────────────────────
-     RAIN GLSL SHADER
-  ───────────────────────────────────────────────────────────────────────── */
-
-  _rainGLSL() {
-    /* Uses Cesium WebGL2 / GLSL 300 es conventions:
-       - `in vec2 v_textureCoordinates` instead of varying
-       - `out_FragColor` instead of gl_FragColor
-       - `texture()` instead of texture2D()                   */
-    return `
-uniform sampler2D colorTexture;
-in vec2 v_textureCoordinates;
-uniform float u_intensity;
-uniform float u_time;
-
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-void main() {
-  vec2 uv  = v_textureCoordinates;
-  vec4 col = texture(colorTexture, uv);
-
-  float rain = 0.0;
-
-  // Six depth layers — far streaks are thinner and faster
-  for (float i = 0.0; i < 6.0; i++) {
-    float spd    = 0.65 + i * 0.14;
-    float scale  = 0.32 + i * 0.08;
-    float slant  = -0.0018 * i;              // slight diagonal slant
-    vec2  offset = vec2(slant * u_time + i * 0.13, u_time * spd * 0.22);
-
-    vec2 cellSz  = vec2(0.009 * scale, 0.060 * scale);
-    vec2 cell    = floor((uv + offset) / cellSz);
-    vec2 r       = vec2(hash(cell), hash(cell + 7.3));
-    vec2 pos     = fract((uv + offset) / cellSz) - vec2(r.x, 0.0);
-
-    float streak = smoothstep(0.0018 * scale, 0.0, abs(pos.x - 0.0045 * scale))
-                 * smoothstep(0.0,  0.003, pos.y)
-                 * smoothstep(cellSz.y, cellSz.y * 0.82, pos.y);
-
-    rain += streak * (0.35 + r.y * 0.65);
-  }
-
-  rain = clamp(rain * u_intensity * 2.2, 0.0, 1.0);
-
-  // Wet-lens darkening at bottom of frame
-  float wetLens = smoothstep(0.6, 0.0, uv.y) * 0.22 * u_intensity;
-
-  vec3 wetColor = mix(col.rgb, vec3(0.70, 0.82, 1.00), rain * 0.45);
-  wetColor      = wetColor * (1.0 - wetLens * 0.15);
-
-  out_FragColor = vec4(wetColor, col.a);
-}`;
-  }
-
-  /* ─────────────────────────────────────────────────────────────────────────
-     SNOW GLSL SHADER
-  ───────────────────────────────────────────────────────────────────────── */
-
-  _snowGLSL() {
-    return `
-uniform sampler2D colorTexture;
-in vec2 v_textureCoordinates;
-uniform float u_intensity;
-uniform float u_time;
-
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-void main() {
-  vec2 uv  = v_textureCoordinates;
-  vec4 col = texture(colorTexture, uv);
-
-  float snow = 0.0;
-
-  for (float i = 0.0; i < 5.0; i++) {
-    float spd   = 0.028 + i * 0.010;
-    float scale = 0.50  + i * 0.16;
-    float drift = sin(u_time * 0.22 + i * 2.1) * 0.003 * scale;
-
-    vec2  offset = vec2(drift + i * 0.09, u_time * spd);
-    float cSz    = 0.026 * scale;
-    vec2  cell   = floor((uv + offset) / cSz);
-    vec2  r      = vec2(hash(cell), hash(cell + vec2(4.7, 2.1)));
-    vec2  pos    = fract((uv + offset) / cSz) - 0.5 + (r - 0.5) * 0.60;
-
-    float flake  = smoothstep(0.15 * scale, 0.0, length(pos) * (0.65 + r.x * 0.50));
-    snow += flake * (0.45 + r.y * 0.55);
-  }
-
-  snow = clamp(snow * u_intensity * 1.9, 0.0, 0.95);
-
-  // Blend towards white; add subtle cold blue tint to whole scene
-  vec3 snowColor = mix(col.rgb, vec3(1.0, 1.0, 1.0), snow);
-  snowColor      = mix(snowColor, snowColor * vec3(0.88, 0.94, 1.00),
-                       0.20 * u_intensity);
-
-  out_FragColor = vec4(snowColor, col.a);
-}`;
-  }
-
-  /* ─────────────────────────────────────────────────────────────────────────
-     PRECIPITATION CONTROL
+     3D PARTICLE SYSTEM — RAIN & SNOW IN WORLD SPACE
   ───────────────────────────────────────────────────────────────────────── */
 
   /**
-   * Set precipitation type and intensity.
+   * Destroy all active precipitation particle systems.
+   */
+  _clearPrecip() {
+    if (this._precipPrimitive) {
+      try { this.viewer.scene.primitives.remove(this._precipPrimitive); } catch (_) {}
+      this._precipPrimitive = null;
+    }
+    // Legacy GLSL stages (in case old code path left them)
+    if (this._rainStage) {
+      try { this.viewer.scene.postProcessStages.remove(this._rainStage); } catch (_) {}
+      this._rainStage = null;
+    }
+    if (this._snowStage) {
+      try { this.viewer.scene.postProcessStages.remove(this._snowStage); } catch (_) {}
+      this._snowStage = null;
+    }
+  }
+
+  /**
+   * Build a 1×1 white pixel data URI for use as the particle image.
+   */
+  _makeParticleImage(r, g, b, a) {
+    const c = document.createElement('canvas');
+    c.width = 8; c.height = 8;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, 8, 8);
+    ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+    // Rain: vertical thin line; Snow: soft dot
+    if (this._precipType === 'rain') {
+      ctx.fillRect(3, 0, 2, 8);
+    } else {
+      ctx.beginPath();
+      ctx.arc(4, 4, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c.toDataURL();
+  }
+
+  /**
+   * Build a 3D Cesium ParticleSystem for rain or snow placed around the camera.
+   * @param {'rain'|'snow'} type
+   * @param {number} intensity  0..1
+   */
+  _build3DParticleSystem(type, intensity) {
+    const scene  = this.viewer.scene;
+    const camera = this.viewer.camera;
+
+    // Spread box half-size and fall height above camera
+    const spread   = 4000;   // ±4 km around camera (XY)
+    const fallFrom = 1800;   // particles start 1800 m above camera
+    const fallTo   = -200;   // fall 200 m below camera
+
+    let emissionRate, speed, sizeMin, sizeMax, lifeMin, lifeMax, color;
+
+    if (type === 'rain') {
+      emissionRate = Math.round(300 + intensity * 900); // 300–1200 particles/s
+      speed        = 60 + intensity * 60;               // 60–120 m/s downward
+      sizeMin      = 1.5;  sizeMax = 3.0;
+      lifeMin      = (fallFrom - fallTo) / (speed + 60);
+      lifeMax      = lifeMin * 1.3;
+      color        = new Cesium.Color(0.75, 0.88, 1.0, 0.55 + intensity * 0.30);
+    } else { // snow
+      emissionRate = Math.round(60 + intensity * 140);  // 60–200 particles/s (much less dense)
+      speed        = 4 + intensity * 8;                 // 4–12 m/s gentle fall
+      sizeMin      = 4;    sizeMax = 9;
+      lifeMin      = (fallFrom - fallTo) / (speed + 5);
+      lifeMax      = lifeMin * 1.8;
+      color        = new Cesium.Color(1.0, 1.0, 1.0, 0.75);
+    }
+
+    // Build particle image canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 16; canvas.height = (type === 'rain') ? 24 : 16;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (type === 'rain') {
+      // Thin vertical elongated streak
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, 'rgba(180,220,255,0)');
+      grad.addColorStop(0.2, 'rgba(180,220,255,0.85)');
+      grad.addColorStop(1, 'rgba(180,220,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(6, 0, 4, canvas.height);
+    } else {
+      // Soft radial snow flake dot
+      const grad = ctx.createRadialGradient(8, 8, 0, 8, 8, 7);
+      grad.addColorStop(0,   'rgba(255,255,255,1)');
+      grad.addColorStop(0.5, 'rgba(220,235,255,0.75)');
+      grad.addColorStop(1,   'rgba(200,220,255,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(8, 8, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const imageUrl = canvas.toDataURL();
+
+    // Emitter at camera position + fallFrom meters altitude
+    const camPos  = camera.positionCartographic;
+    if (!camPos) return null;
+
+    const emitPos = Cesium.Cartesian3.fromRadians(
+      camPos.longitude, camPos.latitude,
+      camPos.height + fallFrom
+    );
+
+    // Gravity-aligned direction vectors (down relative to Earth surface at camera)
+    // Use Cesium's east-north-up frame to get the "down" vector
+    const enu    = Cesium.Transforms.eastNorthUpToFixedFrame(emitPos);
+    const downEC = new Cesium.Cartesian3(-enu[8], -enu[9], -enu[10]); // -Z column = down
+    Cesium.Cartesian3.normalize(downEC, downEC);
+
+    // Box emitter — spread particles in a horizontal slab above camera
+    const particleSystem = new Cesium.ParticleSystem({
+      image: imageUrl,
+      color: color,
+      startColor: color,
+      endColor:   new Cesium.Color(color.red, color.green, color.blue, 0.0),
+
+      startScale: 1.0,
+      endScale:   1.0,
+
+      minimumParticleLife: Math.max(lifeMin, 2),
+      maximumParticleLife: Math.max(lifeMax, 4),
+
+      minimumMass: 0.1,
+      maximumMass: 0.2,
+
+      minimumSpeed: speed * 0.8,
+      maximumSpeed: speed * 1.2,
+
+      imageSize: new Cesium.Cartesian2(sizeMin, sizeMax),
+
+      emissionRate: emissionRate,
+
+      // Box emitter for wide horizontal spread
+      emitter: new Cesium.BoxEmitter(new Cesium.Cartesian3(spread, spread, 200)),
+
+      // Place emitter at the altitude slab above camera
+      modelMatrix: Cesium.Transforms.eastNorthUpToFixedFrame(emitPos),
+
+      // Emit particles downward with slight horizontal drift for snow
+      emitterModelMatrix: Cesium.Matrix4.fromRotationTranslation(
+        Cesium.Matrix3.IDENTITY,
+        Cesium.Cartesian3.ZERO
+      ),
+
+      // Gravity-like acceleration — world-space down vector
+      // Cesium ParticleSystem uses local gravity via accelerations
+      lifetime: 1e9, // run forever
+      loop: true,
+
+      // Gravity acceleration in local ENU: -Z is down (negative up)
+      forces: [
+        type === 'snow'
+          ? function(particle) {
+              // Gentle downward + slight swirl
+              const t = performance.now() / 1000;
+              particle.velocity.x += Math.sin(t * 0.5 + particle.position.x * 0.0001) * 0.04;
+              particle.velocity.y += Math.cos(t * 0.4 + particle.position.y * 0.0001) * 0.04;
+              particle.velocity.z -= 0.5; // gentle down
+            }
+          : function(particle) {
+              particle.velocity.z -= 9.8 * 0.016; // rain: gravity each frame
+            }
+      ]
+    });
+
+    return particleSystem;
+  }
+
+  /**
+   * Internal: set 3D precipitation type + intensity, manage particle systems.
+   * @param {'none'|'rain'|'snow'} type
+   * @param {number} [intensity=0.5]
+   */
+  _set3DPrecipitation(type, intensity) {
+    if (intensity !== undefined) this._precipIntensity = intensity;
+    this._precipType = type;
+
+    this._clearPrecip();
+
+    if (type === 'none') return;
+
+    try {
+      const ps = this._build3DParticleSystem(type, this._precipIntensity);
+      if (ps) {
+        this._precipPrimitive = this.viewer.scene.primitives.add(ps);
+
+        // Follow camera: re-anchor particle emitter as camera moves
+        this._precipCameraListener = () => {
+          if (!this._precipPrimitive) return;
+          try {
+            const cam = this.viewer.camera.positionCartographic;
+            if (!cam) return;
+            const fallFrom = 1800;
+            const newPos = Cesium.Cartesian3.fromRadians(
+              cam.longitude, cam.latitude, cam.height + fallFrom
+            );
+            this._precipPrimitive.modelMatrix =
+              Cesium.Transforms.eastNorthUpToFixedFrame(newPos);
+          } catch (_) {}
+        };
+        this.viewer.camera.moveEnd.addEventListener(this._precipCameraListener);
+      }
+    } catch (e) {
+      console.warn('[Weather] Could not create 3D particle precipitation:', e);
+    }
+  }
+
+  /**
+   * Public: manually set precipitation type and intensity.
+   * Marks as manually set so weather auto-drive won't override it.
    * @param {'none'|'rain'|'snow'} type
    * @param {number} [intensity=0.5]  0.0 – 1.0
    */
   setPrecipitation(type, intensity) {
-    if (intensity !== undefined) this._precipIntensity = intensity;
-    this._precipType = type;
-
-    // Always remove both stages first
-    if (this._rainStage) {
-      this.viewer.scene.postProcessStages.remove(this._rainStage);
-      this._rainStage = null;
-    }
-    if (this._snowStage) {
-      this.viewer.scene.postProcessStages.remove(this._snowStage);
-      this._snowStage = null;
-    }
-
-    if (type === 'rain') {
-      this._rainStage = new Cesium.PostProcessStage({
-        name: 'weatherRain',
-        fragmentShader: this._rainGLSL(),
-        uniforms: {
-          // Dynamic functions: re-evaluated every frame automatically
-          u_intensity: () => this._precipIntensity,
-          u_time:      () => performance.now() / 1000.0
-        }
-      });
-      this.viewer.scene.postProcessStages.add(this._rainStage);
-
-    } else if (type === 'snow') {
-      this._snowStage = new Cesium.PostProcessStage({
-        name: 'weatherSnow',
-        fragmentShader: this._snowGLSL(),
-        uniforms: {
-          u_intensity: () => this._precipIntensity,
-          u_time:      () => performance.now() / 1000.0
-        }
-      });
-      this.viewer.scene.postProcessStages.add(this._snowStage);
-    }
+    this._precipManual = (type !== 'none');
+    this._set3DPrecipitation(type, intensity);
   }
 
-  /** Update intensity without recreating the shader stage. */
+  /** Update intensity without recreating the particle system. */
   setPrecipitationIntensity(intensity) {
     this._precipIntensity = intensity;
-    // Uniforms are closures — they read _precipIntensity automatically next frame
+    // Recreate with new intensity for particle systems (emission rate changes)
+    if (this._precipType && this._precipType !== 'none') {
+      this._set3DPrecipitation(this._precipType, intensity);
+    }
   }
 
   /* ─────────────────────────────────────────────────────────────────────────
@@ -526,13 +650,10 @@ void main() {
       this.viewer.scene.primitives.remove(this._cloudCollection);
       this._cloudCollection = null;
     }
-    if (this._rainStage) {
-      this.viewer.scene.postProcessStages.remove(this._rainStage);
-      this._rainStage = null;
-    }
-    if (this._snowStage) {
-      this.viewer.scene.postProcessStages.remove(this._snowStage);
-      this._snowStage = null;
+    this._clearPrecip();
+    if (this._precipCameraListener) {
+      this.viewer.camera.moveEnd.removeEventListener(this._precipCameraListener);
     }
   }
 }
+
