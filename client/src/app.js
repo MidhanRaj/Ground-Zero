@@ -633,14 +633,52 @@
   hudClockInterval = setInterval(updateLocalClock, 1000);
   updateLocalClock();
 
-  function decodeWmoCode(code, isDay = 1) {
-    if (code === 0) return isDay ? { label: 'Clear ☀️', icon: '☀️' } : { label: 'Clear Night 🌙', icon: '🌙' };
-    if ([1, 2, 3].includes(code)) return isDay ? { label: 'Partly Cloudy ⛅', icon: '⛅' } : { label: 'Partly Cloudy ☁️', icon: '☁️' };
-    if ([45, 48].includes(code)) return { label: 'Foggy 🌫️', icon: '🌫️' };
-    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { label: 'Rain 🌧️', icon: '🌧️' };
-    if ([71, 73, 75, 77, 85, 86].includes(code)) return { label: 'Snow ❄️', icon: '❄️' };
-    if ([95, 96, 99].includes(code)) return { label: 'Thunderstorm 🌩️', icon: '🌩️' };
-    return { label: 'Overcast ☁️', icon: '☁️' };
+  function decodeWmoCode(code, isDay = 1, windSpeed = 0) {
+    const timeTag = isDay ? 'Day' : 'Night';
+
+    // High wind condition
+    if (windSpeed > 32 && [0, 1, 2, 3].includes(code)) {
+      return { label: `${timeTag} • Windy`, icon: isDay ? '🌬️' : '🌬️🌙' };
+    }
+
+    // Clear sky
+    if (code === 0) {
+      return isDay 
+        ? { label: 'Day • Clear', icon: '☀️' } 
+        : { label: 'Night • Clear', icon: '🌙' };
+    }
+
+    // Partly cloudy / Cloudy
+    if ([1, 2, 3].includes(code)) {
+      return isDay 
+        ? { label: 'Day • Cloudy', icon: '⛅' } 
+        : { label: 'Night • Cloudy', icon: '☁️🌙' };
+    }
+
+    // Foggy
+    if ([45, 48].includes(code)) {
+      return { label: `${timeTag} • Foggy`, icon: '🌫️' };
+    }
+
+    // Rainy
+    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+      return { label: `${timeTag} • Rainy`, icon: '🌧️' };
+    }
+
+    // Snowy
+    if ([71, 73, 75, 77, 85, 86].includes(code)) {
+      return { label: `${timeTag} • Snowy`, icon: '❄️' };
+    }
+
+    // Thunderstorm
+    if ([95, 96, 99].includes(code)) {
+      return { label: `${timeTag} • Thunderstorm`, icon: '🌩️' };
+    }
+
+    // Overcast
+    return isDay
+      ? { label: 'Day • Overcast', icon: '☁️' }
+      : { label: 'Night • Overcast', icon: '☁️🌙' };
   }
 
   async function updateLocationAndWeather() {
@@ -669,7 +707,8 @@
         if (wData && wData.current) {
           const temp = Math.round(wData.current.temperature_2m);
           const isDay = wData.current.is_day !== undefined ? wData.current.is_day : 1;
-          const codeInfo = decodeWmoCode(wData.current.weather_code, isDay);
+          const wind = Math.round(wData.current.wind_speed_10m);
+          const codeInfo = decodeWmoCode(wData.current.weather_code, isDay, wind);
           const humidity = wData.current.relative_humidity_2m;
           const wind = Math.round(wData.current.wind_speed_10m);
 
