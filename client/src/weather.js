@@ -62,20 +62,26 @@ class WeatherSystem {
 
     // Dynamic Day/Night Starfield: Hide background stars during daytime atmosphere facing, show at night or space
     scene.preRender.addEventListener(() => {
-      if (!scene.skyBox) return;
-      const cameraPos = scene.camera.positionCartographic;
-      if (cameraPos && cameraPos.height < 150000) {
-        // Below 150km: check if camera location is illuminated by the sun
-        const currentTime = (this.viewer && this.viewer.clock) ? this.viewer.clock.currentTime : Cesium.JulianDate.now();
-        const sunPos = Cesium.Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame(currentTime);
-        if (sunPos) {
-          const normal = Cesium.Cartesian3.normalize(scene.camera.position, new Cesium.Cartesian3());
-          const sunNormal = Cesium.Cartesian3.normalize(sunPos, new Cesium.Cartesian3());
-          const dot = Cesium.Cartesian3.dot(normal, sunNormal);
-          scene.skyBox.show = dot < -0.05; // Hide stars on sunlit daytime side
+      try {
+        if (!scene || !scene.skyBox) return;
+        const cameraPos = scene.camera ? scene.camera.positionCartographic : null;
+        if (cameraPos && cameraPos.height < 150000) {
+          const clock = (this.viewer && this.viewer.clock) ? this.viewer.clock : null;
+          const time = clock ? clock.currentTime : (scene.frameState ? scene.frameState.time : Cesium.JulianDate.now());
+          if (time && Cesium.Simon1994PlanetaryPositions) {
+            const sunPos = Cesium.Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame(time);
+            if (sunPos && scene.camera) {
+              const normal = Cesium.Cartesian3.normalize(scene.camera.position, new Cesium.Cartesian3());
+              const sunNormal = Cesium.Cartesian3.normalize(sunPos, new Cesium.Cartesian3());
+              const dot = Cesium.Cartesian3.dot(normal, sunNormal);
+              scene.skyBox.show = dot < -0.05; // Hide stars on sunlit daytime side
+            }
+          }
+        } else if (scene.skyBox) {
+          scene.skyBox.show = true; // Always show stars in deep space
         }
-      } else {
-        scene.skyBox.show = true; // Always show stars in deep space
+      } catch (e) {
+        // Safe guard: prevent preRender error from halting Cesium render loop
       }
     });
 
