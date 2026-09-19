@@ -1,6 +1,5 @@
 /**
  * app.js - CesiumJS Terrain Viewer with Honest Provenance
- * NASA Space Apps Challenge 2026
  */
 
 (async function () {
@@ -336,12 +335,15 @@
   const obsPercentVal = document.getElementById('obsPercentVal');
   const obsBarFill    = document.getElementById('obsBarFill');
   function updateLiveStats() {
+    if (!obsPercentVal || !obsBarFill || !meta || typeof meta.observed_percent === 'undefined') return;
     const pct = meta.observed_percent.toFixed(1);
     obsPercentVal.innerText = pct + '%';
     obsBarFill.style.width  = pct + '%';
   }
-  viewer.camera.moveEnd.addEventListener(updateLiveStats);
-  updateLiveStats();
+  if (obsPercentVal && obsBarFill) {
+    viewer.camera.moveEnd.addEventListener(updateLiveStats);
+    updateLiveStats();
+  }
 
   // ── 11. Search Bar (Nominatim geocoder) ──────────────────────────────────────
   const searchInput    = document.getElementById('searchInput');

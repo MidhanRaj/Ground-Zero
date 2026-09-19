@@ -1,7 +1,7 @@
 {
   "name": "terrain-honest-provenance-client",
   "version": "1.0.0",
-  "description": "3D Terrain viewer with honest provenance - NASA Space Apps 2026",
+  "description": "3D Terrain viewer with honest provenance",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

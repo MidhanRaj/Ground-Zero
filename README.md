@@ -1,6 +1,6 @@
-# Ground Zeros — NASA Space Apps 2026
+# Ground Zeros
 
-Building a browser-based 3D terrain viewer for the NASA Space Apps Challenge. Most "AI-enhanced satellite globe" projects drape generative upscaling over imagery with no way to tell measured pixels from invented ones. This project does the opposite — real elevation data corrected against its actual source, bridges modelled as 3D structures instead of baked into the terrain, and every AI-filled or interpolated pixel tagged and rendered differently from a direct observation.
+Building a browser-based 3D terrain viewer. Most "AI-enhanced satellite globe" projects drape generative upscaling over imagery with no way to tell measured pixels from invented ones. This project does the opposite — real elevation data corrected against its actual source, bridges modelled as 3D structures instead of baked into the terrain, and every AI-filled or interpolated pixel tagged and rendered differently from a direct observation.
 
 ## Solved Problems
 
