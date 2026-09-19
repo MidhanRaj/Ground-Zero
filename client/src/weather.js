@@ -66,7 +66,8 @@ class WeatherSystem {
       const cameraPos = scene.camera.positionCartographic;
       if (cameraPos && cameraPos.height < 150000) {
         // Below 150km: check if camera location is illuminated by the sun
-        const sunPos = Cesium.Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame(scene.clock.currentTime);
+        const currentTime = (this.viewer && this.viewer.clock) ? this.viewer.clock.currentTime : Cesium.JulianDate.now();
+        const sunPos = Cesium.Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame(currentTime);
         if (sunPos) {
           const normal = Cesium.Cartesian3.normalize(scene.camera.position, new Cesium.Cartesian3());
           const sunNormal = Cesium.Cartesian3.normalize(sunPos, new Cesium.Cartesian3());
