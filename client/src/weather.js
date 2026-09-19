@@ -15,19 +15,36 @@ class WeatherSystem {
     this.viewer = viewer;
 
     // Internal state
-    this._cloudCollection     = null;
-    this._cloudMoveHandler    = null;
-    this._rainStage           = null;
-    this._snowStage           = null;
-    this._cloudsEnabled       = false;
-    this._cloudDensity        = 0.5;
-    this._precipType          = 'none';
-    this._precipIntensity     = 0.5;
-    this._dayNightEnabled     = false;
-    this._timeMultiplier      = 1;
+    this._cloudBillboardCollection = null;
+    this._activeCloudsData         = [];
+    this._cloudTextures            = [
+      'data/clouds/FX_CloudAlpha01.png',
+      'data/clouds/FX_CloudAlpha02.png',
+      'data/clouds/FX_CloudAlpha03.png',
+      'data/clouds/FX_CloudAlpha04.png',
+      'data/clouds/FX_CloudAlpha05.png',
+      'data/clouds/FX_CloudAlpha06.png',
+      'data/clouds/FX_CloudAlpha07.png',
+      'data/clouds/FX_CloudAlpha08.png',
+      'data/clouds/FX_CloudAlpha09.png',
+      'data/clouds/FX_CloudAlpha10.png'
+    ];
+    this._cloudWindSpeed   = 18;  // km/h
+    this._cloudWindHeading = 45;  // NE drift
+    this._currentWeatherCode = 1;
+
+    this._rainStage       = null;
+    this._snowStage       = null;
+    this._cloudsEnabled   = false;
+    this._cloudDensity    = 0.5;
+    this._precipType      = 'none';
+    this._precipIntensity = 0.5;
+    this._dayNightEnabled = false;
+    this._timeMultiplier  = 1;
 
     this._initSky();
     this._initClock();
+    this._initVolumetricClouds();
   }
 
   /* ─────────────────────────────────────────────────────────────────────────
@@ -142,32 +159,138 @@ class WeatherSystem {
   }
 
   /* ─────────────────────────────────────────────────────────────────────────
-     PROCEDURAL CLOUDS
+  /* ─────────────────────────────────────────────────────────────────────────
+     MOVING VOLUMETRIC CLOUDS WITH SHADOW CASTING (Custom PNG Textures)
   ───────────────────────────────────────────────────────────────────────── */
 
-  _spawnClouds() {
-    if (!this._cloudCollection) return;
-    this._cloudCollection.removeAll();
+  _initVolumetricClouds() {
+    const scene = this.viewer.scene;
 
-    const cart  = this.viewer.camera.positionCartographic;
-    const lat   = Cesium.Math.toDegrees(cart.latitude);
-    const lon   = Cesium.Math.toDegrees(cart.longitude);
-    const count = Math.round(15 + this._cloudDensity * 120);
+    // BillboardCollection for volumetric textured cloud particles
+    this._cloudBillboardCollection = scene.primitives.add(new Cesium.BillboardCollection({
+      scene: scene
+    }));
+
+    // Enable dynamic cloud shadows cast onto ground & 3D buildings
+    try {
+      this._cloudBillboardCollection.shadows = Cesium.ShadowMode.ENABLED;
+    } catch (_) {}
+
+    // Pre-render drift animation loop: continuously move clouds according to wind speed/heading
+    let lastTime = performance.now();
+    scene.preRender.addEventListener(() => {
+      try {
+        if (!this._cloudsEnabled || !this._activeCloudsData.length) return;
+
+        const now = performance.now();
+        const dt = Math.min((now - lastTime) / 1000, 0.1);
+        lastTime = now;
+
+        const rad = Cesium.Math.toRadians(this._cloudWindHeading);
+        const speedMps = (this._cloudWindSpeed * 1000) / 3600;
+        const dEast  = Math.sin(rad) * speedMps * dt;
+        const dNorth = Math.cos(rad) * speedMps * dt;
+
+        const cameraPos = this.viewer.camera.positionCartographic;
+        if (!cameraPos) return;
+
+        const centerLon = Cesium.Math.toDegrees(cameraPos.longitude);
+        const centerLat = Cesium.Math.toDegrees(cameraPos.latitude);
+
+        const metersPerDegLat = 111000;
+        const metersPerDegLon = Math.max(1000, 111000 * Math.cos(cameraPos.latitude));
+
+        const dLon = dEast / metersPerDegLon;
+        const dLat = dNorth / metersPerDegLat;
+        const maxRadiusDeg = 0.25; // 25km radius
+
+        for (let i = 0; i < this._activeCloudsData.length; i++) {
+          const item = this._activeCloudsData[i];
+          item.lon += dLon;
+          item.lat += dLat;
+
+          if (item.lon > centerLon + maxRadiusDeg) item.lon = centerLon - maxRadiusDeg;
+          if (item.lon < centerLon - maxRadiusDeg) item.lon = centerLon + maxRadiusDeg;
+          if (item.lat > centerLat + maxRadiusDeg) item.lat = centerLat - maxRadiusDeg;
+          if (item.lat < centerLat - maxRadiusDeg) item.lat = centerLat + maxRadiusDeg;
+
+          item.billboard.position = Cesium.Cartesian3.fromDegrees(item.lon, item.lat, item.height);
+        }
+      } catch (e) {
+        // Safe guard
+      }
+    });
+
+    // Re-cluster clouds when camera moves to a new region
+    this.viewer.camera.moveEnd.addEventListener(() => {
+      if (this._cloudsEnabled) this._spawnVolumetricClouds();
+    });
+  }
+
+  _spawnVolumetricClouds() {
+    if (!this._cloudBillboardCollection) return;
+    this._cloudBillboardCollection.removeAll();
+    this._activeCloudsData = [];
+
+    const cameraPos = this.viewer.camera.positionCartographic;
+    if (!cameraPos) return;
+
+    const centerLat = Cesium.Math.toDegrees(cameraPos.latitude);
+    const centerLon = Cesium.Math.toDegrees(cameraPos.longitude);
+
+    // Weather-aware clustering configuration
+    let count = 40;
+    let minAlt = 2000, maxAlt = 4000;
+    let cloudColor = new Cesium.Color(1.0, 1.0, 1.0, 0.85);
+
+    const code = this._currentWeatherCode;
+    if (code === 0) {
+      // Clear / Sunny: sparse high-altitude cirrus
+      count = Math.round(8 + this._cloudDensity * 12);
+      minAlt = 5000; maxAlt = 7500;
+      cloudColor = new Cesium.Color(1.0, 1.0, 1.0, 0.45);
+    } else if ([1, 2, 3].includes(code)) {
+      // Partly Cloudy: medium scattered cumulus clusters
+      count = Math.round(25 + this._cloudDensity * 55);
+      minAlt = 2200; maxAlt = 4500;
+      cloudColor = new Cesium.Color(0.98, 0.98, 1.0, 0.82);
+    } else if ([45, 48, 80].includes(code)) {
+      // Foggy / Overcast: dense multi-layered cloud strata
+      count = Math.round(60 + this._cloudDensity * 70);
+      minAlt = 1500; maxAlt = 3500;
+      cloudColor = new Cesium.Color(0.85, 0.88, 0.92, 0.90);
+    } else {
+      // Rain / Snow / Thunderstorm: dense dark storm clouds
+      count = Math.round(80 + this._cloudDensity * 80);
+      minAlt = 1200; maxAlt = 2800;
+      cloudColor = new Cesium.Color(0.35, 0.38, 0.45, 0.95);
+    }
 
     for (let i = 0; i < count; i++) {
-      const dLon   = (Math.random() - 0.5) * 4.5;
-      const dLat   = (Math.random() - 0.5) * 4.5;
-      const alt    = 1800 + Math.random() * 3200;
-      const w      = 1200 + Math.random() * 4500;
-      const bright = 0.85 + Math.random() * 0.15;
+      const dLon = (Math.random() - 0.5) * 0.35;
+      const dLat = (Math.random() - 0.5) * 0.35;
+      const lon  = centerLon + dLon;
+      const lat  = centerLat + dLat;
+      const height = minAlt + Math.random() * (maxAlt - minAlt);
+
+      const texturePath = this._cloudTextures[i % this._cloudTextures.length];
+      const scaleFactor = 12.0 + Math.random() * 24.0; // Dynamic cluster scale
 
       try {
-        this._cloudCollection.add({
-          position:    Cesium.Cartesian3.fromDegrees(lon + dLon, lat + dLat, alt),
-          scale:       new Cesium.Cartesian2(w, w * 0.35),
-          maximumSize: new Cesium.Cartesian3(w * 0.6, w * 0.2, w * 0.35),
-          slice:       0.2 + Math.random() * 0.6,
-          brightness:  bright
+        const bb = this._cloudBillboardCollection.add({
+          position: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+          image: texturePath,
+          scale: scaleFactor,
+          color: cloudColor,
+          rotation: Math.random() * Math.PI * 2,
+          alignedAxis: Cesium.Cartesian3.UNIT_Z
+        });
+
+        this._activeCloudsData.push({
+          billboard: bb,
+          lon,
+          lat,
+          height
         });
       } catch (e) {
         break;
@@ -176,8 +299,20 @@ class WeatherSystem {
   }
 
   /**
+   * Set real-time weather conditions to dynamically cluster and tint clouds.
+   */
+  setWeatherCondition(weatherCode, windSpeed) {
+    this._currentWeatherCode = weatherCode;
+    if (windSpeed !== undefined && windSpeed > 0) {
+      this._cloudWindSpeed = windSpeed;
+    }
+    if (this._cloudsEnabled) {
+      this._spawnVolumetricClouds();
+    }
+  }
+
+  /**
    * Toggle global satellite cloud imagery layer (Ion / NASA GIBS).
-   * @param {boolean} enabled
    */
   setSatelliteClouds(enabled) {
     if (enabled) {
@@ -202,42 +337,25 @@ class WeatherSystem {
   }
 
   /**
-   * Toggle 3D procedural clouds on/off and optionally set density.
-   * @param {boolean} enabled
-   * @param {number}  [density=0.5]  0.0 – 1.0
+   * Toggle 3D procedural/textured clouds on/off and optionally set density.
    */
   setClouds(enabled, density) {
     this._cloudsEnabled = enabled;
     if (density !== undefined) this._cloudDensity = density;
 
+    if (this._cloudBillboardCollection) {
+      this._cloudBillboardCollection.show = enabled;
+    }
+
     if (enabled) {
-      if (typeof Cesium.CloudCollection === 'undefined') {
-        console.warn('[WeatherSystem] CloudCollection not available in this Cesium version.');
-        return;
-      }
-
-      if (!this._cloudCollection) {
-        this._cloudCollection = new Cesium.CloudCollection({ show: true });
-        this.viewer.scene.primitives.add(this._cloudCollection);
-
-        // Refresh cloud field when user pans to a new area
-        this._cloudMoveHandler = () => {
-          if (this._cloudsEnabled) this._spawnClouds();
-        };
-        this.viewer.camera.moveEnd.addEventListener(this._cloudMoveHandler);
-      }
-
-      this._cloudCollection.show = true;
-      this._spawnClouds();
-    } else {
-      if (this._cloudCollection) this._cloudCollection.show = false;
+      this._spawnVolumetricClouds();
     }
   }
 
   /** Update cloud density while clouds are visible. */
   setCloudDensity(density) {
     this._cloudDensity = density;
-    if (this._cloudsEnabled && this._cloudCollection) this._spawnClouds();
+    if (this._cloudsEnabled) this._spawnVolumetricClouds();
   }
 
   /* ─────────────────────────────────────────────────────────────────────────

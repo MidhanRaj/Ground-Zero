@@ -647,6 +647,11 @@
 
           if (hudWeatherVal) hudWeatherVal.innerText = `${temp}°C ${codeInfo.icon}`;
           if (hudWeatherSubText) hudWeatherSubText.innerText = `${codeInfo.label} • Wind ${wind} km/h • Humidity ${humidity}%`;
+
+          // Sync real-time weather & wind speed to 3D volumetric moving clouds
+          if (weather && weather.setWeatherCondition) {
+            weather.setWeatherCondition(wData.current.weather_code, wData.current.wind_speed_10m);
+          }
         }
         if (wData && wData.timezone) {
           activeTimezone = wData.timezone;

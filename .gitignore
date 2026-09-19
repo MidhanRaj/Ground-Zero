@@ -1,6 +1,7 @@
-# Data directory (ignore raw/intermediate data, track processed web assets)
+# Data directory (ignore raw/intermediate data, track processed web assets & clouds)
 /data/*
 !/data/processed/
+!/data/clouds/
 
 # Node dependencies
 node_modules/
