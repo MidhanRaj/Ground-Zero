@@ -951,3 +951,86 @@ input[type="range"] {
   box-shadow: 0 4px 20px rgba(255, 68, 68, 0.5);
 }
 
+/* Location, Time & Weather HUD Badge */
+.location-hud-badge {
+  position: absolute;
+  top: 178px;
+  left: 20px;
+  z-index: 10;
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--panel-border);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glow);
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.hud-location-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-pin-icon {
+  color: var(--accent-cyan);
+  flex-shrink: 0;
+}
+
+.hud-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hud-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hud-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.hud-val {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-val.clock-val {
+  color: var(--accent-cyan);
+  font-family: monospace, monospace;
+}
+
+.hud-val.weather-val {
+  color: #38bdf8;
+}
+
+.hud-footer-info {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+

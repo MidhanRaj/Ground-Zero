@@ -555,5 +555,123 @@
     }
   });
 
-  console.log('[Cesium] Ready — Bing Aerial | World Terrain | Google Photorealistic 3D | Weather & Flight Systems');
+  // ── 14. Live Location, Timezone Clock & Weather System ────────────────────────
+  const hudCityText       = document.getElementById('hudCityText');
+  const hudLocalTimeVal   = document.getElementById('hudLocalTimeVal');
+  const hudWeatherVal     = document.getElementById('hudWeatherVal');
+  const hudWeatherSubText = document.getElementById('hudWeatherSubText');
+
+  let activeTimezone      = null;
+  let hudClockInterval    = null;
+  let moveDebounceTimeout = null;
+
+  function updateLocalClock() {
+    if (!hudLocalTimeVal) return;
+    try {
+      const now = new Date();
+      if (activeTimezone) {
+        const timeStr = new Intl.DateTimeFormat('en-US', {
+          timeZone: activeTimezone,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).format(now);
+        
+        const zoneShort = new Intl.DateTimeFormat('en-US', {
+          timeZone: activeTimezone,
+          timeZoneName: 'short'
+        }).format(now).split(' ').pop();
+        
+        hudLocalTimeVal.innerText = `${timeStr} ${zoneShort}`;
+      } else {
+        hudLocalTimeVal.innerText = now.toLocaleTimeString([], { hour12: false });
+      }
+    } catch (e) {
+      hudLocalTimeVal.innerText = new Date().toLocaleTimeString([], { hour12: false });
+    }
+  }
+
+  if (hudClockInterval) clearInterval(hudClockInterval);
+  hudClockInterval = setInterval(updateLocalClock, 1000);
+  updateLocalClock();
+
+  function decodeWmoCode(code) {
+    if (code === 0) return { label: 'Clear ☀️', icon: '☀️' };
+    if ([1, 2, 3].includes(code)) return { label: 'Partly Cloudy ⛅', icon: '⛅' };
+    if ([45, 48].includes(code)) return { label: 'Foggy 🌫️', icon: '🌫️' };
+    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { label: 'Rain 🌧️', icon: '🌧️' };
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return { label: 'Snow ❄️', icon: '❄️' };
+    if ([95, 96, 99].includes(code)) return { label: 'Thunderstorm 🌩️', icon: '🌩️' };
+    return { label: 'Overcast ☁️', icon: '☁️' };
+  }
+
+  async function updateLocationAndWeather() {
+    try {
+      let cart = null;
+      if (viewer && viewer.canvas && viewer.scene) {
+        const center = new Cesium.Cartesian2(viewer.canvas.clientWidth / 2, viewer.canvas.clientHeight / 2);
+        const ray = viewer.camera.getPickRay(center);
+        const position = viewer.scene.globe.pick(ray, viewer.scene);
+        if (position) {
+          cart = Cesium.Cartographic.fromCartesian(position);
+        } else {
+          cart = viewer.camera.positionCartographic;
+        }
+      }
+      if (!cart) return;
+
+      const lon = Cesium.Math.toDegrees(cart.longitude);
+      const lat = Cesium.Math.toDegrees(cart.latitude);
+
+      // 1. Fetch Weather & Timezone via Open-Meteo
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
+      const wRes = await fetch(weatherUrl);
+      if (wRes.ok) {
+        const wData = await wRes.json();
+        if (wData && wData.current) {
+          const temp = Math.round(wData.current.temperature_2m);
+          const codeInfo = decodeWmoCode(wData.current.weather_code);
+          const humidity = wData.current.relative_humidity_2m;
+          const wind = Math.round(wData.current.wind_speed_10m);
+
+          if (hudWeatherVal) hudWeatherVal.innerText = `${temp}°C ${codeInfo.icon}`;
+          if (hudWeatherSubText) hudWeatherSubText.innerText = `${codeInfo.label} • Wind ${wind} km/h • Humidity ${humidity}%`;
+        }
+        if (wData && wData.timezone) {
+          activeTimezone = wData.timezone;
+          updateLocalClock();
+        }
+      }
+
+      // 2. Reverse Geocode via Nominatim
+      const geoUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&format=json&zoom=10`;
+      const gRes = await fetch(geoUrl, { headers: { 'Accept-Language': 'en' } });
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        if (gData && gData.address) {
+          const city = gData.address.city || gData.address.town || gData.address.village || gData.address.county || gData.address.state || gData.address.country || 'Earth Surface';
+          const country = gData.address.country || '';
+          const name = (country && city !== country) ? `${city}, ${country}` : city;
+          if (hudCityText) hudCityText.innerText = name;
+        } else if (gData && gData.display_name) {
+          const parts = gData.display_name.split(',');
+          if (hudCityText) hudCityText.innerText = parts.slice(0, 2).join(',').trim();
+        }
+      }
+    } catch (err) {
+      console.warn('[LocationHUD] Error updating location & weather:', err);
+    }
+  }
+
+  // Update on camera movement end
+  viewer.camera.moveEnd.addEventListener(() => {
+    clearTimeout(moveDebounceTimeout);
+    moveDebounceTimeout = setTimeout(updateLocationAndWeather, 450);
+  });
+
+  // Initial update
+  setTimeout(updateLocationAndWeather, 1000);
+
+  console.log('[Cesium] Ready — Bing Aerial | World Terrain | Google Photorealistic 3D | Weather & Location Systems');
 })();

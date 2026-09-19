@@ -69,6 +69,34 @@
     </div>
   </div>
 
+  <!-- Live Location, Clock & Weather HUD Badge -->
+  <div class="location-hud-badge" id="locationHudBadge">
+    <div class="hud-header">
+      <div class="hud-location-name">
+        <svg class="hud-pin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+        <span id="hudCityText">Detecting location…</span>
+      </div>
+    </div>
+
+    <div class="hud-details-grid">
+      <div class="hud-detail-item">
+        <span class="hud-label">LOCAL TIME</span>
+        <span class="hud-val clock-val" id="hudLocalTimeVal">--:--:--</span>
+      </div>
+
+      <div class="hud-detail-item">
+        <span class="hud-label">WEATHER</span>
+        <span class="hud-val weather-val" id="hudWeatherVal">--°C</span>
+      </div>
+    </div>
+
+    <div class="hud-footer-info">
+      <span id="hudWeatherSubText">Fetching local weather…</span>
+    </div>
+  </div>
+
   <!-- Control Panel -->
   <aside class="control-panel">
     <div class="panel-header">
