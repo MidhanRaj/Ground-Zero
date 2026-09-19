@@ -176,7 +176,33 @@ class WeatherSystem {
   }
 
   /**
-   * Toggle clouds on/off and optionally set density.
+   * Toggle global satellite cloud imagery layer (Ion / NASA GIBS).
+   * @param {boolean} enabled
+   */
+  setSatelliteClouds(enabled) {
+    if (enabled) {
+      if (!this._satCloudLayer) {
+        try {
+          const provider = new Cesium.UrlTemplateImageryProvider({
+            url: 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/2024-05-01/250m/{z}/{y}/{x}.jpg',
+            credit: 'NASA GIBS / Cesium Satellite Cloud Imagery',
+            maximumLevel: 9
+          });
+          this._satCloudLayer = this.viewer.imageryLayers.addImageryProvider(provider);
+          this._satCloudLayer.alpha = 0.65;
+        } catch (e) {
+          console.warn('[Weather] Could not load satellite cloud layer:', e);
+        }
+      } else {
+        this._satCloudLayer.show = true;
+      }
+    } else if (this._satCloudLayer) {
+      this._satCloudLayer.show = false;
+    }
+  }
+
+  /**
+   * Toggle 3D procedural clouds on/off and optionally set density.
    * @param {boolean} enabled
    * @param {number}  [density=0.5]  0.0 – 1.0
    */

@@ -492,22 +492,33 @@
     if (chkDayNight.checked && isManualMode) weather.setManualHour(h);
   });
 
-  // ── Procedural Clouds ─────────────────────────────────────────────────────────
+  // ── Procedural & Satellite Clouds ─────────────────────────────────────────────
   const chkClouds          = document.getElementById('chkClouds');
+  const chkSatClouds       = document.getElementById('chkSatClouds');
   const cloudDensityRow    = document.getElementById('cloudDensityRow');
   const sliderCloudDensity = document.getElementById('sliderCloudDensity');
   const cloudDensityVal    = document.getElementById('cloudDensityVal');
 
-  chkClouds.addEventListener('change', e => {
-    cloudDensityRow.style.display = e.target.checked ? '' : 'none';
-    weather.setClouds(e.target.checked, parseFloat(sliderCloudDensity.value) / 100);
-  });
+  if (chkClouds) {
+    chkClouds.addEventListener('change', e => {
+      cloudDensityRow.style.display = e.target.checked ? '' : 'none';
+      weather.setClouds(e.target.checked, parseFloat(sliderCloudDensity.value) / 100);
+    });
+  }
 
-  sliderCloudDensity.addEventListener('input', e => {
-    const pct = parseInt(e.target.value, 10);
-    cloudDensityVal.innerText = pct + '%';
-    weather.setCloudDensity(pct / 100);
-  });
+  if (chkSatClouds) {
+    chkSatClouds.addEventListener('change', e => {
+      weather.setSatelliteClouds(e.target.checked);
+    });
+  }
+
+  if (sliderCloudDensity) {
+    sliderCloudDensity.addEventListener('input', e => {
+      const pct = parseInt(e.target.value, 10);
+      cloudDensityVal.innerText = pct + '%';
+      weather.setCloudDensity(pct / 100);
+    });
+  }
 
   // ── Precipitation ─────────────────────────────────────────────────────────────
   const precipIntensityRow    = document.getElementById('precipIntensityRow');
