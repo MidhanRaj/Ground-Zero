@@ -42,12 +42,29 @@
       callback: function (x, y, level) {
         const tileRect = tilingScheme.tileXYToRectangle(x, y, level);
         const tileData = new Float32Array(meta.width * meta.height);
-        if (!Cesium.Rectangle.intersection(tileRect, extentRectangle)) return tileData;
+        
+        // Fast non-intersection check: return immediately if tile does not touch the heightmap patch
+        if (tileRect.east < meta.west || tileRect.west > meta.east ||
+            tileRect.north < meta.south || tileRect.south > meta.north) {
+          return tileData;
+        }
+
+        const latStep = (tileRect.north - tileRect.south) / (meta.height - 1);
+        const lonStep = (tileRect.east - tileRect.west) / (meta.width - 1);
+
         for (let r = 0; r < meta.height; r++) {
-          const lat = tileRect.north - (r / (meta.height - 1)) * (tileRect.north - tileRect.south);
+          const lat = tileRect.north - r * latStep;
+          if (lat < meta.south || lat > meta.north) continue;
+
           for (let c = 0; c < meta.width; c++) {
-            const lon = tileRect.west + (c / (meta.width - 1)) * (tileRect.east - tileRect.west);
-            tileData[r * meta.width + c] = getSampledHeight(heightmapArray, lon, lat) ?? 0;
+            const lon = tileRect.west + c * lonStep;
+            if (lon < meta.west || lon > meta.east) continue;
+
+            const u = (lon - meta.west) / (meta.east - meta.west);
+            const v = (meta.north - lat) / (meta.north - meta.south);
+            const col = Math.max(0, Math.min(meta.width - 1, Math.floor(u * (meta.width - 1))));
+            const row = Math.max(0, Math.min(meta.height - 1, Math.floor(v * (meta.height - 1))));
+            tileData[r * meta.width + c] = heightmapArray[row * meta.width + col] ?? 0;
           }
         }
         return tileData;
@@ -84,6 +101,17 @@
     animation: false,
     navigationHelpButton: false
   });
+
+  // Performance optimization: resolution scaling cap for High-DPI / Retina displays
+  viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.25);
+  viewer.targetFrameRate  = 60;
+
+  // Optimize shadow map performance
+  if (viewer.shadowMap) {
+    viewer.shadowMap.maximumDistance = 2500.0;
+    viewer.shadowMap.size = 1024;
+    viewer.shadowMap.softShadows = false;
+  }
 
   // Remove default imagery and add Bing Aerial satellite
   viewer.imageryLayers.removeAll();
@@ -122,7 +150,11 @@
   try {
     buildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207, {
       shadows: Cesium.ShadowMode.ENABLED,
-      maximumScreenSpaceError: 8   // denser tile loading
+      maximumScreenSpaceError: 16,  // Smooth 60fps tile loading threshold
+      maximumMemoryUsage: 512,       // Limit GPU VRAM footprint
+      skipLevelOfDetail: true,
+      preloadAncestors: false,
+      preloadSiblings: false
     });
     viewer.scene.primitives.add(buildingsTileset);
     // Google tiles include their own terrain mesh — disable depth-test to avoid
