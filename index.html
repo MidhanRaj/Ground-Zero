@@ -38,10 +38,15 @@
       <div class="token-input-row">
         <input id="tokenInput" class="token-input" type="text" placeholder="Paste your Cesium Ion token here…" autocomplete="off" spellcheck="false">
       </div>
-      <button id="tokenSubmitBtn" class="token-submit-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-        Launch Globe
-      </button>
+      <div style="display:flex; gap:10px; width:100%; margin-top:12px;">
+        <button id="tokenSubmitBtn" class="token-submit-btn" style="flex:1;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Launch 3D Tiles
+        </button>
+        <button id="tokenSkipBtn" class="token-submit-btn" style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); flex:1;">
+          Explore Basic Globe
+        </button>
+      </div>
       <p class="token-modal-hint">Token is stored in your browser — never sent anywhere. <a href="https://ion.cesium.com/tokens" target="_blank" rel="noopener">Get a free token →</a></p>
     </div>
   </div>
@@ -300,10 +305,10 @@
   </button>
 
   <!-- Weather System -->
-  <script src="client/src/weather.js?v=1.1.0"></script>
+  <script src="client/src/weather.js?v=1.1.1"></script>
   <!-- Flight Simulator Mode -->
-  <script src="client/src/flight.js?v=1.1.0"></script>
+  <script src="client/src/flight.js?v=1.1.1"></script>
   <!-- Application Logic -->
-  <script src="client/src/app.js?v=1.1.0"></script>
+  <script src="client/src/app.js?v=1.1.1"></script>
 </body>
 </html>

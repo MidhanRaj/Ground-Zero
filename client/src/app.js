@@ -5,25 +5,7 @@
 (async function () {
   // ── Cesium Ion Access Token — set by user via token modal ──────────────────
   const ionToken = localStorage.getItem('cesiumIonToken') || '';
-  if (!ionToken) {
-    // Show token modal and wait for it to be submitted before proceeding
-    await new Promise(resolve => {
-      const modal = document.getElementById('tokenModal');
-      const input = document.getElementById('tokenInput');
-      const btn   = document.getElementById('tokenSubmitBtn');
-      if (modal) modal.style.display = 'flex';
-      const submit = () => {
-        const val = (input ? input.value : '').trim();
-        if (!val) return;
-        localStorage.setItem('cesiumIonToken', val);
-        Cesium.Ion.defaultAccessToken = val;
-        if (modal) modal.style.display = 'none';
-        resolve();
-      };
-      if (btn) btn.addEventListener('click', submit);
-      if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-    });
-  } else {
+  if (ionToken) {
     Cesium.Ion.defaultAccessToken = ionToken;
   }
 
@@ -63,7 +45,6 @@
         const tileRect = tilingScheme.tileXYToRectangle(x, y, level);
         const tileData = new Float32Array(meta.width * meta.height);
         
-        // Fast non-intersection check: return immediately if tile does not touch the heightmap patch
         if (tileRect.east < meta.west || tileRect.west > meta.east ||
             tileRect.north < meta.south || tileRect.south > meta.north) {
           return tileData;
@@ -95,24 +76,26 @@
   const carvedTerrainProvider   = createTerrainProvider(carvedHeightmap);
   const uncarvedTerrainProvider = createTerrainProvider(uncarvedHeightmap);
 
-  // ── 3. Load Cesium World Terrain (real global 3D) ───────────────────────────
+  // ── 3. Initialize Viewer IMMEDIATELY ────────────────────────────────────────
   let worldTerrainProvider;
   try {
-    worldTerrainProvider = await Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
-      requestVertexNormals: true,
-      requestWaterMask: true
-    });
+    if (Cesium.Ion.defaultAccessToken) {
+      worldTerrainProvider = await Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
+        requestVertexNormals: true,
+        requestWaterMask: true
+      });
+    } else {
+      worldTerrainProvider = new Cesium.EllipsoidTerrainProvider();
+    }
   } catch (e) {
-    console.warn('[Cesium] World Terrain unavailable, using ellipsoid.', e);
+    console.warn('[Cesium] World Terrain fallback:', e);
     worldTerrainProvider = new Cesium.EllipsoidTerrainProvider();
   }
 
-  // ── 4. Initialize Viewer ────────────────────────────────────────────────────
-  // CRITICAL: Do NOT pass imageryProvider to constructor — deprecated in ≥1.104
   const viewer = new Cesium.Viewer('cesiumContainer', {
-    terrainProvider: worldTerrainProvider,  // Real 3D globally by default
+    terrainProvider: worldTerrainProvider,
     baseLayerPicker: false,
-    geocoder: false,          // We add our own search bar
+    geocoder: false,
     homeButton: false,
     infoBox: false,
     sceneModePicker: false,
@@ -122,32 +105,82 @@
     navigationHelpButton: false
   });
 
-  // Performance: cap resolution on HiDPI, limit shadow quality
+  // Performance caps & Globe guaranteed visibility
   viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.0);
   viewer.targetFrameRate = 60;
-  viewer.scene.requestRenderMode = false; // Always render for smooth feel
+  viewer.scene.requestRenderMode = false;
   viewer.scene.maximumRenderTimeChange = Infinity;
+  viewer.scene.globe.show = true;
 
-  // Shadow quality — keep distance short for perf
-  if (viewer.shadowMap) {
-    viewer.shadowMap.maximumDistance = 1500.0;
-    viewer.shadowMap.size = 512;
-    viewer.shadowMap.softShadows = false;
-    viewer.shadowMap.normalOffset = true;
+  // Mount guaranteed base map imagery (OpenStreetMap) so globe is ALWAYS 100% visible
+  const baseImagery = new Cesium.OpenStreetMapImageryProvider({
+    url: 'https://a.tile.openstreetmap.org/'
+  });
+  viewer.imageryLayers.removeAll();
+  viewer.imageryLayers.addImageryProvider(baseImagery);
+
+  // Async loader for Ion Assets (Satellite Imagery + Google 3D Tiles)
+  let buildingsTileset = null;
+  async function loadIonAssets() {
+    if (!Cesium.Ion.defaultAccessToken) return;
+
+    try {
+      const satellite = await Cesium.IonImageryProvider.fromAssetId(2);
+      viewer.imageryLayers.removeAll();
+      viewer.imageryLayers.addImageryProvider(satellite);
+      console.log('[Cesium] Ion Satellite imagery loaded.');
+    } catch (e) {
+      console.warn('[Cesium] Ion Satellite imagery unavailable:', e);
+    }
+
+    try {
+      if (buildingsTileset) {
+        try { viewer.scene.primitives.remove(buildingsTileset); } catch (_) {}
+      }
+      buildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207, {
+        shadows: Cesium.ShadowMode.DISABLED,
+        maximumScreenSpaceError: 24,
+        maximumMemoryUsage: 2048,
+        skipLevelOfDetail: true,
+        preloadAncestors: true,
+        preloadSiblings: true,
+        cullWithChildrenBounds: true,
+        dynamicScreenSpaceError: true,
+        dynamicScreenSpaceErrorDensity: 0.002,
+        dynamicScreenSpaceErrorFactor: 5.0,
+        dynamicScreenSpaceErrorHeightFalloff: 0.25
+      });
+      viewer.scene.primitives.add(buildingsTileset);
+      viewer.scene.globe.depthTestAgainstTerrain = false;
+      console.log('[Cesium] Google Photorealistic 3D Tiles loaded.');
+    } catch (e) {
+      console.warn('[Cesium] Google Photorealistic 3D Tiles unavailable:', e);
+    }
   }
 
-  // Remove default imagery and add Bing Aerial satellite
-  viewer.imageryLayers.removeAll();
-  try {
-    const satellite = await Cesium.IonImageryProvider.fromAssetId(2);
-    viewer.imageryLayers.addImageryProvider(satellite);
-  } catch (e) {
-    console.warn('[Cesium] Bing Aerial unavailable, using OSM.', e);
-    viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
-      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      credit: '© OpenStreetMap contributors',
-      maximumLevel: 19
-    }));
+  // Load Ion assets if token exists; otherwise show token modal over live globe
+  if (ionToken) {
+    loadIonAssets();
+  } else {
+    const modal = document.getElementById('tokenModal');
+    const input = document.getElementById('tokenInput');
+    const btn   = document.getElementById('tokenSubmitBtn');
+    const skip  = document.getElementById('tokenSkipBtn');
+    if (modal) modal.style.display = 'flex';
+
+    const handleTokenSubmit = () => {
+      const val = (input ? input.value : '').trim();
+      if (val) {
+        localStorage.setItem('cesiumIonToken', val);
+        Cesium.Ion.defaultAccessToken = val;
+        loadIonAssets();
+      }
+      if (modal) modal.style.display = 'none';
+    };
+
+    if (btn) btn.addEventListener('click', handleTokenSubmit);
+    if (skip) skip.addEventListener('click', () => { if (modal) modal.style.display = 'none'; });
+    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') handleTokenSubmit(); });
   }
 
   // ── Globe & Atmosphere (Flight Sim look) ──────────────────────────────────
@@ -162,32 +195,6 @@
   // Atmospheric scattering & fog
   viewer.scene.skyAtmosphere.show = true;
   viewer.scene.fog.enabled = false;
-
-  // ── Google Photorealistic 3D Tiles ─────────────────────────────────────────
-  // Ion asset 2275207 — real photogrammetry textures from Google Maps aerial
-  // imagery. Covers the globe including India.
-  let buildingsTileset = null;
-  try {
-    buildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207, {
-      shadows: Cesium.ShadowMode.DISABLED,   // Shadows off = large GPU saving
-      maximumScreenSpaceError: 24,           // Smooth balance of detail and rendering speed
-      maximumMemoryUsage: 2048,              // 2GB VRAM cache prevents tile eviction stutter
-      skipLevelOfDetail: true,
-      preloadAncestors: true,
-      preloadSiblings: true,
-      cullWithChildrenBounds: true,
-      dynamicScreenSpaceError: true,         // Reduce quality of distant tiles
-      dynamicScreenSpaceErrorDensity: 0.002,
-      dynamicScreenSpaceErrorFactor: 5.0,
-      dynamicScreenSpaceErrorHeightFalloff: 0.25
-    });
-    viewer.scene.primitives.add(buildingsTileset);
-    // Google tiles carry their own terrain — avoid z-fighting
-    viewer.scene.globe.depthTestAgainstTerrain = false;
-    console.log('[Cesium] Google Photorealistic 3D Tiles loaded.');
-  } catch (e) {
-    console.warn('[Cesium] Google Photorealistic 3D Tiles unavailable:', e);
-  }
 
   // ── 5. Google Earth–style Navigation ────────────────────────────────────────
   // Google Earth: left-drag = pan/rotate, right-drag = TILT, scroll = zoom
