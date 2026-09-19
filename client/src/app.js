@@ -151,14 +151,13 @@
   }
 
   // ── Globe & Atmosphere (Flight Sim look) ──────────────────────────────────
-  viewer.scene.globe.enableLighting = true;
+  viewer.scene.globe.enableLighting = false;
   viewer.scene.globe.depthTestAgainstTerrain = true;
   viewer.scene.globe.showGroundAtmosphere = true;
-  viewer.scene.globe.atmosphereLightIntensity = 10.0;
 
-  // Shadows for buildings & terrain
-  viewer.shadows = true;
-  viewer.terrainShadows = Cesium.ShadowMode.ENABLED;
+  // Shadows off for max performance & smooth 60 FPS rendering like Google Earth
+  viewer.shadows = false;
+  viewer.terrainShadows = Cesium.ShadowMode.DISABLED;
 
   // Atmospheric scattering & fog
   viewer.scene.skyAtmosphere.show = true;
@@ -166,19 +165,20 @@
 
   // ── Google Photorealistic 3D Tiles ─────────────────────────────────────────
   // Ion asset 2275207 — real photogrammetry textures from Google Maps aerial
-  // imagery. Covers the globe including India. No custom shader needed.
+  // imagery. Covers the globe including India.
   let buildingsTileset = null;
   try {
     buildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207, {
       shadows: Cesium.ShadowMode.DISABLED,   // Shadows off = large GPU saving
-      maximumScreenSpaceError: 32,           // Higher = fewer tiles loaded = faster
-      maximumMemoryUsage: 256,               // Tighter VRAM cap prevents stalls
+      maximumScreenSpaceError: 24,           // Smooth balance of detail and rendering speed
+      maximumMemoryUsage: 2048,              // 2GB VRAM cache prevents tile eviction stutter
       skipLevelOfDetail: true,
       preloadAncestors: true,
-      preloadSiblings: false,
+      preloadSiblings: true,
+      cullWithChildrenBounds: true,
       dynamicScreenSpaceError: true,         // Reduce quality of distant tiles
-      dynamicScreenSpaceErrorDensity: 0.00278,
-      dynamicScreenSpaceErrorFactor: 4.0,
+      dynamicScreenSpaceErrorDensity: 0.002,
+      dynamicScreenSpaceErrorFactor: 5.0,
       dynamicScreenSpaceErrorHeightFalloff: 0.25
     });
     viewer.scene.primitives.add(buildingsTileset);

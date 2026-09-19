@@ -153,16 +153,31 @@ class FlightSystem {
     const moveAmount = this._speed * boost * dt;
     camera.move(camera.direction, moveAmount);
 
-    // ── Terrain floor ─────────────────────────────────────────────
+    // ── Terrain & 3D Building Floor Collision ─────────────────────────────
     const carto = Cesium.Cartographic.fromCartesian(camera.position);
-    if (carto.height < this._minAlt) {
-      carto.height = this._minAlt;
+
+    let groundHeight = 0;
+    try {
+      const sampled = this.viewer.scene.sampleHeight(carto);
+      if (typeof sampled === 'number' && !isNaN(sampled)) {
+        groundHeight = sampled;
+      } else if (this.viewer.scene.globe) {
+        const globeH = this.viewer.scene.globe.getHeight(carto);
+        if (typeof globeH === 'number' && !isNaN(globeH)) groundHeight = globeH;
+      }
+    } catch (_) {}
+
+    // Maintain a safe minimum altitude above ground level (AGL)
+    const minSafetyAGL = 15; // 15m floor above terrain/buildings
+    if (carto.height < groundHeight + minSafetyAGL) {
+      carto.height = groundHeight + minSafetyAGL;
       camera.position = Cesium.Ellipsoid.WGS84.cartographicToCartesian(carto);
-      if (this._pitch < 0.05) this._pitch = 0.05;
+      // Auto pitch nose up when touching ground/building floor
+      if (this._pitch < 0.1) this._pitch = 0.15;
     }
 
     // ── Update HUD ────────────────────────────────────────────────
-    this._updateHUD(carto);
+    this._updateHUD(carto, groundHeight);
     this._prevAlt = carto.height;
   }
 
@@ -279,7 +294,7 @@ class FlightSystem {
     ladder.innerHTML = html;
   }
 
-  _updateHUD(carto) {
+  _updateHUD(carto, groundHeight) {
     const speedMS  = this._speed;
     const speedKts = (speedMS * 1.94384).toFixed(0);
     const mach     = (speedMS / 340.29).toFixed(2);
@@ -287,6 +302,7 @@ class FlightSystem {
     const hdgDeg   = Math.round((Cesium.Math.toDegrees(this._heading) + 360) % 360);
     const vs       = ((carto.height - this._prevAlt) / (this._lastTime ? Math.min((performance.now() - this._lastTime) / 1000, 0.05) : 0.016));
     const vsVal    = isFinite(vs) ? vs.toFixed(0) : '0';
+    const aglVal   = Math.max(0, carto.height - (groundHeight || 0));
 
     // Text readouts
     const el = id => document.getElementById(id);
@@ -294,7 +310,7 @@ class FlightSystem {
     el('hudMach').textContent   = mach;
     el('hudAlt').textContent    = parseFloat(altM).toLocaleString();
     el('hudVS').textContent     = (vs > 0 ? '+' : '') + vsVal;
-    el('hudAGL').textContent    = Math.max(0, carto.height - 0).toFixed(0);
+    el('hudAGL').textContent    = aglVal.toFixed(0);
     el('hudHdgBox').textContent = String(hdgDeg).padStart(3, '0') + '°';
 
     // Throttle bar
