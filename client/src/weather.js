@@ -54,22 +54,14 @@ class WeatherSystem {
   _initSky() {
     const scene = this.viewer.scene;
 
-    // Enable High Dynamic Range & Per-Fragment Rayleigh/Mie Atmosphere Scattering
-    scene.highDynamicRange = true;
+    // Standard crisp sky atmosphere without overexposure
+    scene.highDynamicRange = false;
     scene.skyAtmosphere.show = true;
 
     try {
       scene.skyAtmosphere.perFragmentAtmosphere = true;
-      scene.skyAtmosphere.atmosphereRayleighCoefficient =
-        new Cesium.Cartesian3(5.5e-6, 13.0e-6, 28.4e-6);
-      scene.skyAtmosphere.atmosphereMieCoefficient =
-        new Cesium.Cartesian3(2.1e-5, 2.1e-5, 2.1e-5);
-      scene.skyAtmosphere.atmosphereMieAnisotropy      = 0.85;
-      scene.skyAtmosphere.atmosphereRayleighScaleHeight = 10000.0;
-      scene.skyAtmosphere.atmosphereMieScaleHeight      = 3200.0;
-      scene.skyAtmosphere.atmosphereLightIntensity      = 15.0;
     } catch (e) {
-      // Older Cesium builds safe fallback
+      // Safe fallback
     }
 
     // Stars (SkyBox) & Sun/Moon
@@ -104,7 +96,6 @@ class WeatherSystem {
 
     // Globe receives correct sun lighting
     scene.globe.enableLighting = true;
-    try { scene.globe.atmosphereLightIntensity = 15.0; } catch (_) {}
   }
 
   /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -238,52 +229,50 @@ class WeatherSystem {
     const centerLat = Cesium.Math.toDegrees(cameraPos.latitude);
     const centerLon = Cesium.Math.toDegrees(cameraPos.longitude);
 
-    // Weather-aware clustering configuration
-    let count = 40;
-    let minAlt = 2000, maxAlt = 4000;
-    let cloudColor = new Cesium.Color(1.0, 1.0, 1.0, 0.85);
+    // Moderate, non-intrusive cloud count
+    let count = 12;
+    let minAlt = 3500, maxAlt = 6000;
+    let cloudColor = new Cesium.Color(1.0, 1.0, 1.0, 0.45);
 
     const code = this._currentWeatherCode;
     if (code === 0) {
-      // Clear / Sunny: sparse high-altitude cirrus
-      count = Math.round(8 + this._cloudDensity * 12);
-      minAlt = 5000; maxAlt = 7500;
-      cloudColor = new Cesium.Color(1.0, 1.0, 1.0, 0.45);
+      count = Math.round(5 + this._cloudDensity * 5);
+      minAlt = 6000; maxAlt = 8000;
+      cloudColor = new Cesium.Color(1.0, 1.0, 1.0, 0.35);
     } else if ([1, 2, 3].includes(code)) {
-      // Partly Cloudy: medium scattered cumulus clusters
-      count = Math.round(25 + this._cloudDensity * 55);
-      minAlt = 2200; maxAlt = 4500;
-      cloudColor = new Cesium.Color(0.98, 0.98, 1.0, 0.82);
+      count = Math.round(10 + this._cloudDensity * 12);
+      minAlt = 3500; maxAlt = 5500;
+      cloudColor = new Cesium.Color(0.98, 0.98, 1.0, 0.50);
     } else if ([45, 48, 80].includes(code)) {
-      // Foggy / Overcast: dense multi-layered cloud strata
-      count = Math.round(60 + this._cloudDensity * 70);
-      minAlt = 1500; maxAlt = 3500;
-      cloudColor = new Cesium.Color(0.85, 0.88, 0.92, 0.90);
+      count = Math.round(15 + this._cloudDensity * 15);
+      minAlt = 2500; maxAlt = 4500;
+      cloudColor = new Cesium.Color(0.85, 0.88, 0.92, 0.55);
     } else {
-      // Rain / Snow / Thunderstorm: dense dark storm clouds
-      count = Math.round(80 + this._cloudDensity * 80);
-      minAlt = 1200; maxAlt = 2800;
-      cloudColor = new Cesium.Color(0.35, 0.38, 0.45, 0.95);
+      count = Math.round(18 + this._cloudDensity * 15);
+      minAlt = 2200; maxAlt = 4000;
+      cloudColor = new Cesium.Color(0.55, 0.58, 0.65, 0.60);
     }
 
     for (let i = 0; i < count; i++) {
-      const dLon = (Math.random() - 0.5) * 0.35;
-      const dLat = (Math.random() - 0.5) * 0.35;
+      const dLon = (Math.random() - 0.5) * 0.45;
+      const dLat = (Math.random() - 0.5) * 0.45;
       const lon  = centerLon + dLon;
       const lat  = centerLat + dLat;
       const height = minAlt + Math.random() * (maxAlt - minAlt);
 
       const texturePath = this._cloudTextures[i % this._cloudTextures.length];
-      const scaleFactor = 12.0 + Math.random() * 24.0; // Dynamic cluster scale
 
       try {
         const bb = this._cloudBillboardCollection.add({
           position: Cesium.Cartesian3.fromDegrees(lon, lat, height),
           image: texturePath,
-          scale: scaleFactor,
+          sizeInMeters: true,
+          width: 3500 + Math.random() * 3000,
+          height: 2000 + Math.random() * 2000,
           color: cloudColor,
           rotation: Math.random() * Math.PI * 2,
-          alignedAxis: Cesium.Cartesian3.UNIT_Z
+          alignedAxis: Cesium.Cartesian3.UNIT_Z,
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(4000.0, 300000.0)
         });
 
         this._activeCloudsData.push({
@@ -308,23 +297,8 @@ class WeatherSystem {
       this._cloudWindSpeed = windSpeed;
     }
 
-    // â”€â”€ Auto-clouds based on weather code â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Any weather other than clear auto-enables clouds
-    const cloudCodes = [1, 2, 3, 45, 48, 51, 53, 55, 56, 57,
-                        61, 63, 65, 66, 67, 71, 73, 75, 77,
-                        80, 81, 82, 85, 86, 95, 96, 99];
-    const shouldHaveClouds = cloudCodes.includes(weatherCode);
-
-    // If clouds were manually enabled leave them on; if weather demands them, turn on too
-    if (shouldHaveClouds && !this._cloudsEnabled) {
-      this._cloudsEnabled = true;
-      if (this._cloudBillboardCollection) this._cloudBillboardCollection.show = true;
-    } else if (!shouldHaveClouds && this._cloudsEnabled && !this._cloudsManuallyEnabled) {
-      this._cloudsEnabled = false;
-      if (this._cloudBillboardCollection) this._cloudBillboardCollection.show = false;
-    }
-
-    if (this._cloudsEnabled) {
+    // Auto-clouds: only spawn if clouds were manually toggled on by user
+    if (this._cloudsManuallyEnabled && this._cloudsEnabled) {
       this._spawnVolumetricClouds();
     }
 

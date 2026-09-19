@@ -154,7 +154,7 @@
   viewer.scene.globe.enableLighting = true;
   viewer.scene.globe.depthTestAgainstTerrain = true;
   viewer.scene.globe.showGroundAtmosphere = true;
-  viewer.scene.globe.atmosphereLightIntensity = 15.0;
+  viewer.scene.globe.atmosphereLightIntensity = 10.0;
 
   // Shadows for buildings & terrain
   viewer.shadows = true;
@@ -162,9 +162,7 @@
 
   // Atmospheric scattering & fog
   viewer.scene.skyAtmosphere.show = true;
-  viewer.scene.fog.enabled = true;
-  viewer.scene.fog.density = 0.00012;
-  viewer.scene.fog.minimumBrightness = 0.03;
+  viewer.scene.fog.enabled = false;
 
   // ── Google Photorealistic 3D Tiles ─────────────────────────────────────────
   // Ion asset 2275207 — real photogrammetry textures from Google Maps aerial
