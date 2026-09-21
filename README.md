@@ -7,6 +7,9 @@ Building a browser-based 3D terrain viewer. Most "AI-enhanced satellite globe" p
 1. **Bridge Baked-in Terrain / Damming**: Global DEMs (radar/photogrammetric) capture bridge decks as solid ground, damming valleys or creating fake trenches. We carve bridge footprints out of the DEM, restore true ground elevation, and build bridge decks/piers as separate 3D structures.
 2. **Vertical Datum & Coastline Seams**: Elevation and bathymetry come from different instruments, resolutions, and vertical datums (EGM2008 geoid vs WGS84 ellipsoid). Stitched without correction, the coastline seam is wrong. We apply explicit vertical datum transforms before merging.
 
+##Live Demo Link:
+https://midhanraj.github.io/Ground-Zero/
+
 ## Repository Structure
 
 ```
